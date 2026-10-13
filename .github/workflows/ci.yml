@@ -1,0 +1,77 @@
+name: CleanCore CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-docs:
+    name: Validate Docs & Integrity
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run documentation and repository validation
+        run: python scripts/check_docs.py
+
+  build-and-test:
+    name: Build & Test (App)
+    runs-on: windows-latest
+    needs: validate-docs
+    # Активируется автоматически после создания манифестов приложения на этапе 1
+    if: ${{ hashFiles('Cargo.toml') != '' && hashFiles('package.json') != '' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Run Rust tests
+        run: cargo test --workspace --locked
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Frontend Lint & Typecheck
+        run: |
+          pnpm lint
+          pnpm typecheck
+
+      - name: Frontend Tests
+        run: pnpm test --run
+
+      - name: Frontend Build
+        run: pnpm build

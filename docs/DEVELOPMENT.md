@@ -16,9 +16,10 @@ rustc --version
 cargo --version
 rustup show
 node --version
-pnpm --version
+npx pnpm --version # либо corepack pnpm --version без elevation
 ```
 
+Toolchain Rust закреплён в `rust-toolchain.toml` (1.95.0, MSVC target, rustfmt, clippy).
 По отдельности подтвердить C++ tools, Windows SDK и WebView2. Отсутствие `cl.exe` в обычном PATH не доказывает отсутствие Visual Studio toolchain. Целевую Windows 10 проверять в отдельной среде.
 
 ## Выбранные соглашения

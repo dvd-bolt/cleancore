@@ -1,0 +1,18 @@
+/* Only color tokens change: geometry and typography stay shared across Studio palettes. */
+body[data-concept=studio][data-studio-palette=mint]{--bg:#101a17;--shell:#17221e;--surface:#1e2e27;--surface-2:#2b3b33;--line:#374d40;--text:#edf5ee;--muted:#b4c5ba;--dim:#93aa9c;--accent:#a5d8b7;--accent-ink:#172d20;--accent-wash:#293f31}
+body[data-concept=studio][data-studio-palette=glacier]{--bg:#101824;--shell:#172333;--surface:#1e2d40;--surface-2:#2c3c50;--line:#3a4e66;--text:#edf4fb;--muted:#b5c6da;--dim:#99aec7;--accent:#9fcaf0;--accent-ink:#132d47;--accent-wash:#273e57}
+body[data-concept=studio][data-studio-palette=rose]{--bg:#1c141b;--shell:#291e27;--surface:#32252f;--surface-2:#43313e;--line:#59404e;--text:#f8edf3;--muted:#d0b6c5;--dim:#bba0af;--accent:#e4b0c3;--accent-ink:#40212f;--accent-wash:#49313d}
+body[data-concept=studio][data-studio-palette=pearl]{--bg:#171819;--shell:#212325;--surface:#2a2c2f;--surface-2:#36393d;--line:#484c52;--text:#f1f2f4;--muted:#c1c4ca;--dim:#a6aab3;--accent:#e0e3e9;--accent-ink:#25282e;--accent-wash:#35393f}
+body:not([data-concept=studio]) .palette-picker{display:none}
+.palette-picker{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:0 0 24px;padding:16px 20px;background:var(--shell);border:1px solid var(--line);border-radius:12px}
+.palette-heading strong{display:block;font-family:var(--mono);font-size:9px;letter-spacing:1.4px;font-weight:normal;color:var(--accent)}
+.palette-heading>span{display:block;color:var(--muted);font-size:10px;margin-top:7px}
+.palette-options{display:flex;gap:7px;flex-wrap:wrap}
+.palette-options button{display:flex;align-items:center;gap:10px;background:transparent;border:1px solid transparent;border-radius:8px;color:var(--muted);padding:10px 13px;font-size:11px}
+.palette-options button[aria-pressed=true]{background:var(--accent-wash);border-color:var(--accent);color:var(--text)}
+.palette-options button:hover{background:var(--surface-2);color:var(--text)}
+.palette-options small{font-family:var(--mono);font-size:8px;color:var(--dim);margin-right:5px}
+.swatch{display:block;width:15px;height:15px;border-radius:50%;border:1px solid #ffffff40;flex-shrink:0}
+.swatch.amber{background:#e8bb73}.swatch.mint{background:#a5d8b7}.swatch.glacier{background:#9fcaf0}.swatch.rose{background:#e4b0c3}.swatch.pearl{background:#e0e3e9}
+@media(max-width:1050px){.palette-picker{flex-wrap:wrap}.palette-options{width:100%}.palette-options button{flex:1;justify-content:center}}
+@media(max-width:600px){.palette-picker{padding:14px;gap:14px}.palette-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.palette-options button{padding:9px 5px;font-size:10px;gap:6px}.palette-options small{display:none}.swatch{width:12px;height:12px}}

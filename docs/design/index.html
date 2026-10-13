@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'">
+  <link rel="icon" href="data:,">
+  <title>CleanCore — три направления дизайна</title>
+  <link rel="stylesheet" href="prototype.css">
+  <link rel="stylesheet" href="studio-palettes.css">
+  <script src="prototype.js" defer></script>
+</head>
+<body data-concept="control">
+  <header class="review-bar">
+    <a class="review-brand" href="../../README.md">CLEANCORE<span>DESIGN STUDY / 01</span></a>
+    <nav class="concepts" aria-label="Варианты дизайна">
+      <button data-concept="control" aria-pressed="true"><small>01</small> Control</button>
+      <button data-concept="studio" aria-pressed="false"><small>02</small> Studio</button>
+      <button data-concept="signal" aria-pressed="false"><small>03</small> Signal</button>
+    </nav>
+    <span class="review-caption">Три прототипа. Один характер.</span>
+  </header>
+  <main id="preview">
+    <div class="direction"><div><span id="direction-tag">01 / ГРАФИТ И МЯТА</span><h1 id="direction-title">Спокойный контроль.</h1></div><p id="direction-description">Чёткая навигация, крупные показатели и внимание к следующему действию.</p></div>
+    <nav class="palette-picker" aria-label="Расцветки Studio">
+      <div class="palette-heading"><strong>STUDIO / ПАЛИТРЫ</strong><span>Одинаковый интерфейс. Пять настроений.</span></div>
+      <div class="palette-options">
+        <button data-palette="amber" aria-pressed="true"><i class="swatch amber" aria-hidden="true"></i><span><small>01</small> Янтарь</span></button>
+        <button data-palette="mint" aria-pressed="false"><i class="swatch mint" aria-hidden="true"></i><span><small>02</small> Мята</span></button>
+        <button data-palette="glacier" aria-pressed="false"><i class="swatch glacier" aria-hidden="true"></i><span><small>03</small> Ледник</span></button>
+        <button data-palette="rose" aria-pressed="false"><i class="swatch rose" aria-hidden="true"></i><span><small>04</small> Роза</span></button>
+        <button data-palette="pearl" aria-pressed="false"><i class="swatch pearl" aria-hidden="true"></i><span><small>05</small> Жемчуг</span></button>
+      </div>
+    </nav>
+    <section class="window" aria-label="Прототип интерфейса CleanCore">
+      <div class="window-bar"><span class="window-id"><i></i>CleanCore <span class="prototype-mark">ДИЗАЙН-ПРОТОТИП</span></span><div aria-hidden="true" class="window-actions"><span>—</span><span>□</span><span>×</span></div></div>
+      <div class="app-layout">
+        <aside class="sidebar">
+          <a href="#" class="brand" aria-label="CleanCore, обзор"><span class="brand-symbol" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M9 3h14l7 13-7 13H9L2 16Z"/><path d="m11 12 5-3 5 3v8l-5 3-5-3Z"/></svg></span><span>CleanCore<small>ТВОЁ ПРОСТРАНСТВО</small></span></a>
+          <span class="nav-caption">РАБОЧАЯ ОБЛАСТЬ</span>
+          <nav class="app-nav" aria-label="Разделы прототипа">
+            <button class="selected" data-page="overview" aria-current="page"><span data-icon="overview"></span><span class="nav-text">Обзор</span><b>01</b></button>
+            <button data-page="processes"><span data-icon="processes"></span><span class="nav-text">Процессы</span><b>02</b></button>
+            <button data-page="cleanup"><span data-icon="cleanup"></span><span class="nav-text">Очистка</span><b>03</b></button>
+            <button data-page="journal"><span data-icon="journal"></span><span class="nav-text">Журнал</span><b>04</b></button>
+            <button data-page="settings"><span data-icon="settings"></span><span class="nav-text">Настройки</span><b>05</b></button>
+          </nav>
+          <div class="sidebar-bottom"><span class="privacy-symbol" data-icon="shield"></span><div>Только на твоём ПК<small>Без аккаунта и телеметрии</small></div></div>
+        </aside>
+        <div class="workspace">
+          <header class="workspace-top"><div class="breadcrumb">Рабочая область <span>/</span> <strong id="breadcrumb">Обзор</strong></div><button class="quiet-button" id="pause"><span data-icon="pause"></span><span>Пауза обновления</span></button></header>
+          <div class="demo-notice"><span></span>Прототип интерфейса · мониторинг не подключён, системных данных нет.</div>
+          <section id="page-overview" class="page">
+            <div class="page-heading"><div><p class="eyebrow">ОБЗОР СИСТЕМЫ</p><h2>Всё важное.<br> <span>На одном экране.</span></h2><p class="page-description">Нагрузка, процессы и свободное место — без лишнего шума.</p></div><div class="heading-side"><span class="neutral-status">Ожидание данных</span><p>Последнее обновление<br> <strong>Нет данных</strong></p></div></div>
+            <div class="overview-grid">
+              <div class="metric-strip">
+                <article class="metric cpu"><div class="metric-head"><span data-icon="cpu"></span><span>Процессор</span><span class="metric-id">CPU</span></div><div class="metric-value">—<small>%</small></div><div class="metric-foot"><span>Нет данных</span><div class="tiny-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div></article>
+                <article class="metric memory"><div class="metric-head"><span data-icon="memory"></span><span>Память</span><span class="metric-id">RAM</span></div><div class="metric-value">—<small>ГБ</small></div><div class="metric-foot"><span>Нет данных</span><span class="mini-track" aria-hidden="true"></span></div></article>
+                <article class="metric disk"><div class="metric-head"><span data-icon="disk"></span><span>Свободное место</span><span class="metric-id">DISK</span></div><div class="metric-value">—<small>ГБ</small></div><div class="metric-foot"><span>Нет данных</span><span class="mini-track" aria-hidden="true"></span></div></article>
+              </div>
+              <article class="activity-panel"><div class="panel-title"><div><p class="eyebrow">В РЕАЛЬНОМ ВРЕМЕНИ</p><h3>Активность системы</h3></div><div class="chart-tabs" aria-label="Показатель графика"><button class="active" data-chart="CPU" aria-pressed="true">CPU</button><button data-chart="RAM" aria-pressed="false">RAM</button><button data-chart="Сеть" aria-pressed="false">Сеть</button></div></div><div class="chart-label"><span id="chart-label">CPU / загрузка</span><span>Пока нет измерений</span></div><div class="plot"><div class="plot-axis"><span>100</span><span>75</span><span>50</span><span>25</span><span>0</span></div><div class="plot-grid"><div class="plot-empty"><span data-icon="activity"></span><strong>Здесь появится история</strong><span>После подключения мониторинга</span></div></div></div><div class="plot-times" aria-hidden="true"><span>−60 сек</span><span>−45</span><span>−30</span><span>−15</span><span>Сейчас</span></div></article>
+              <article class="cleanup-card"><div class="cleanup-art" aria-hidden="true"><svg viewBox="0 0 180 124"><path d="M90 14 146 46v34L90 112 34 80V46Z"/><path d="m34 46 56 32 56-32M90 78v34M62 30l56 32v34M118 30 62 62v34"/><path class="art-highlight" d="m90 14 56 32-56 32-56-32Z"/><circle cx="145" cy="22" r="13"/><path d="m140 22 4 4 6-8"/></svg></div><p class="eyebrow">ОСВОБОДИ ПРОСТРАНСТВО</p><h3>Сначала посмотреть.<br> Потом решить.</h3><p>Найди временные файлы и проверь список перед любым действием.</p><button class="primary-button" data-open="cleanup">Открыть очистку <span data-icon="arrow"></span></button><div class="safety-note"><span data-icon="shield"></span>Ничего не удаляется автоматически</div></article>
+              <article class="process-preview"><div class="panel-title"><h3>Процессы</h3><button class="text-button" data-open="processes">Открыть список <span data-icon="arrow"></span></button></div><div class="preview-table"><div class="table-head"><span>ПРОЦЕСС</span><span>CPU</span><span>ПАМЯТЬ</span></div><div class="table-empty"><span data-icon="processes"></span><div>Список пока недоступен<small>Здесь будут процессы текущей системы</small></div></div></div></article>
+              <article class="network-panel"><div class="panel-title"><h3>Сеть</h3><span data-icon="network"></span></div><div class="network-values"><div><span>↓ Приём</span><strong>— <small>КБ/с</small></strong></div><div><span>↑ Передача</span><strong>— <small>КБ/с</small></strong></div></div><p>Нет данных об интерфейсах</p></article>
+            </div>
+          </section>
+          <section id="page-processes" class="page" hidden><div class="simple-heading"><p class="eyebrow">МОНИТОРИНГ</p><h2>Процессы</h2><p>Понятная таблица. Только доступные сведения.</p></div><label class="search-label" for="process-search">Поиск процесса</label><input id="process-search" type="search" placeholder="Название или PID" autocomplete="off"><div class="full-table"><div class="full-table-head"><span>Процесс</span><span>PID</span><button id="sort-process" aria-label="Изменить направление сортировки CPU">CPU ↓</button><span>Память</span></div><div class="large-empty"><span data-icon="processes"></span><h3>Нет данных о процессах</h3><p id="process-note">Мониторинг не подключён. Прототип показывает компоновку таблицы.</p></div></div></section>
+          <section id="page-cleanup" class="page" hidden><div class="simple-heading"><p class="eyebrow">БЕЗОПАСНАЯ ОЧИСТКА</p><h2>Меньше лишнего.<br> Больше контроля.</h2><p>Ты выбираешь файлы. Программа проверяет каждое действие.</p></div><div class="cleanup-flow"><span class="current">01 Анализ</span><span>02 Просмотр</span><span>03 Подтверждение</span><span>04 Результат</span></div><article class="category"><div class="category-icon" data-icon="cleanup"></div><div><h3>Временные файлы пользователя</h3><p>Файлы старше 7 дней · ссылки и недоступные объекты исключаются</p><span>Не сканировано</span></div><button id="scan-demo" class="primary-button">Посмотреть состояние</button></article><div id="scan-result" class="inline-note" role="status" hidden>Сканер ещё не подключён. Файлы не просматриваются и не изменяются.</div><div class="safe-banner"><span data-icon="shield"></span><div><h3>Удаление только после твоего подтверждения</h3><p>Сначала список и последствия. В этом прототипе файловых операций нет.</p></div></div></section>
+          <section id="page-journal" class="page" hidden><div class="simple-heading"><p class="eyebrow">ЛОКАЛЬНАЯ ИСТОРИЯ</p><h2>Каждое действие.<br> Без недомолвок.</h2><p>Результаты, пропуски и причины ошибок в одном месте.</p></div><div class="large-empty journal-empty"><span data-icon="journal"></span><h3>История пока пуста</h3><p>Операции не выполнялись. Хранилище приложения не подключено.</p></div></section>
+          <section id="page-settings" class="page" hidden><div class="simple-heading"><p class="eyebrow">НАСТРОЙКИ</p><h2>В твоём ритме.</h2><p>Небольшие детали, которые делают программу удобной.</p></div><div class="setting-row"><div><h3>Обновление показателей</h3><p>В прототипе меняется только вид элемента управления</p></div><label><span class="visually-hidden">Интервал обновления</span><select id="refresh-interval"><option>2 секунды</option><option>5 секунд</option><option>10 секунд</option></select></label></div><div class="setting-row"><div><h3>Тёмная тема</h3><p>Выбранное направление оформления</p></div><span class="setting-value" id="theme-name">Control</span></div><div class="setting-row"><div><h3>Приватность</h3><p>Локальная работа без аккаунта</p></div><span class="setting-value">Без телеметрии</span></div></section>
+          <footer class="app-footer"><span><i></i>Локальный режим</span><span>Windows · обычные права пользователя</span><span>Концепт <strong id="concept-number">01</strong></span></footer>
+        </div>
+      </div>
+    </section>
+    <footer class="direction-footer"><span id="direction-detail">Мятный акцент · боковая навигация · спокойная плотность</span><span>Выбранный вариант пока не зафиксирован</span></footer>
+  </main>
+</body>
+</html>
