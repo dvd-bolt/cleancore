@@ -1,0 +1,44 @@
+# Rust / frontend build output
+/target/
+/dist/
+/coverage/
+**/node_modules/
+**/.vite/
+**/*.tsbuildinfo
+/src-tauri/gen/
+
+# Local environment and editor state
+.env
+.env.*
+!.env.example
+/.idea/
+/.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Application data and diagnostics (never commit user data)
+/local-data/
+/logs/
+*.log
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Temporary outputs and downloaded models
+/tmp/
+/artifacts/
+/models/
+*.gguf
+
+# Secrets
+*.pem
+*.pfx
+*.p12
+*.key
+
+# Keep Cargo.lock and the selected frontend lockfile tracked.
+# Intentional test fixtures must be explicitly reviewed before adding exceptions.
