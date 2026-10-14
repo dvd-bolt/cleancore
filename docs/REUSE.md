@@ -62,3 +62,7 @@ MIT-лицензия собственного кода не переписыва
 | `rusqlite` (crates.io) | `0.32.1` (`bundled`) | MIT | `cleaner-storage` (модуль 2.6) | Изолирован в `StorageManager`. SQLite используется для хранения локальных настроек в `%LOCALAPPDATA%\CleanCore\cleancore.db` (с fallback на in-memory). Валидация интервалов (500..60000 мс). | 2026-10-14, cargo test/clippy |
 
 Библиотеки очистки и Корзины не принимаются автоматически: проверять гарантии против подмены пути согласно [THREAT_MODEL](THREAT_MODEL.md).
+
+## Компоненты этапа 4 (2026-10-14)
+
+Прямое использование библиотек без копирования исходников: uuid 1.28.0 — Apache-2.0 OR MIT; windows-sys 0.61.2 — MIT OR Apache-2.0. Версии/checksums закреплены Cargo.lock, лицензии прочитаны из Cargo metadata для x86_64-pc-windows-msvc. Обе зависимости ранее присутствовали транзитивно. Проверки Windows API и ограничения — [решение 002](decisions/002-parallel-stage4.md), [отчёт](reports/STAGE4.md). Это не является полным аудитом транзитивных лицензий или уязвимостей будущего релиза.

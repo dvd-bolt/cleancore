@@ -55,3 +55,17 @@ Preview не расширяется после подтверждения. Из�
 ## Проверки
 
 Некорректные аргументы, неизвестные ID, повторные запросы, устаревшие preview, частичная доступность, точность чисел и разрыв UI/backend покрываются тестами при появлении контрактов.
+
+## Реализованные контракты этапа 4
+
+- `get_cleanup_availability()` → исполнение разрешено/заблокировано, постоянство журнала, причина.
+- `get_execution_preview()` → неизменяемый execution-preview либо null. Отдельное имя исключает конфликт с порционным `get_cleanup_preview` этапа 3.
+- `prepare_cleanup_confirmation(previewId, selectedIds)` → одноразовое подтверждение точного набора с TTL 120 секунд. Новый выбор аннулирует прежний токен.
+- `start_confirmed_cleanup(confirmationId, acknowledged)` → зарегистрированный Running outcome с operation_id, затем spawn_blocking worker. Без true, постоянного журнала и допущенного адаптера отказ.
+- `get_cleanup_operation(operationId)` → прогресс/результат или null, включая известный исход из SQLite.
+- `cancel_cleanup(operationId)` → принят ли запрос остановки следующих объектов.
+- `get_cleanup_journal(before, limit)` → cursor-page; IPC limit 1..25, UI порциями по 10.
+
+Wire DTO — `cleaner-core/src/cleanup.rs`; frontend — `src/features/cleanup-execution/types.ts`. Байты — десятичные строки, временные метки — Unix milliseconds (UTC). ID не превышают 128 байт; объекты берутся только из backend preview, пути через IPC не принимаются. Preview живёт 10 минут, максимум 1000 объектов и 8 активных снимков. Публикация TrustedCandidate доступна только Rust-сканеру.
+
+Текущий сканер ещё не публикует TrustedCandidate. Из его строковых путей нельзя автоматически восстановить идентичность объекта на момент сканирования; нужен новый capture во время scan и общий immutable snapshot. Контракт объединения — [STAGE4_INTEGRATION](STAGE4_INTEGRATION.md).
