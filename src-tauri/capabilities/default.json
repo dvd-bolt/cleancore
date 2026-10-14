@@ -13,6 +13,7 @@
     "allow-get-app-settings",
     "allow-save-refresh-interval",
     "allow-toggle-pause-metrics",
+    "allow-get-storage-resilience-status",
     "allow-get-cleanup-availability",
     "allow-get-execution-preview",
     "allow-prepare-cleanup-confirmation",

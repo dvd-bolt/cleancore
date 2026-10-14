@@ -53,13 +53,45 @@ pub async fn get_process_list(state: State<'_, AppState>) -> Result<ProcessSnaps
     Ok(snapshot)
 }
 
-/// Возвращает текущие настройки приложения из локальной базы SQLite.
-#[tauri::command]
-pub fn get_app_settings(state: State<'_, AppState>) -> Result<AppSettings, ApiError> {
-    state.storage.load_app_settings().map_err(Into::into)
+use cleaner_storage::{SettingsRecoveryNotice, StorageRecoveryNotice};
+use serde::{Deserialize, Serialize};
+
+/// Сведения об устойчивости хранилища и настроек CleanCore.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StorageResilienceStatus {
+    pub db_path: String,
+    pub settings_path: String,
+    pub db_recovered: bool,
+    pub db_recovery_notice: Option<StorageRecoveryNotice>,
+    pub settings_recovered: bool,
+    pub settings_recovery_notice: Option<SettingsRecoveryNotice>,
+    pub schema_version: i32,
 }
 
-/// Сохраняет интервал опроса метрик (в миллисекундах) в SQLite и применяет его.
+/// Возвращает диагностические сведения об устойчивости хранилища и настроек.
+#[tauri::command]
+pub fn get_storage_resilience_status(
+    state: State<'_, AppState>,
+) -> Result<StorageResilienceStatus, ApiError> {
+    let schema_version = state.storage.current_schema_version().unwrap_or(0);
+    Ok(StorageResilienceStatus {
+        db_path: state.storage.db_path().to_string_lossy().to_string(),
+        settings_path: state.settings.path().to_string_lossy().to_string(),
+        db_recovered: state.storage.was_recovered(),
+        db_recovery_notice: state.storage.recovery_notice().cloned(),
+        settings_recovered: state.settings.was_recovered(),
+        settings_recovery_notice: state.settings.recovery_notice().cloned(),
+        schema_version,
+    })
+}
+
+/// Возвращает текущие настройки приложения из settings.json.
+#[tauri::command]
+pub fn get_app_settings(state: State<'_, AppState>) -> Result<AppSettings, ApiError> {
+    Ok(state.settings.get_settings())
+}
+
+/// Сохраняет интервал опроса метрик (в миллисекундах) в settings.json и применяет его.
 #[tauri::command]
 pub fn save_refresh_interval(
     state: State<'_, AppState>,
@@ -79,12 +111,16 @@ pub fn save_refresh_interval(
         code: "STATE_LOCK_ERROR".into(),
         message: "Настройки недоступны".into(),
     })?;
-    let mut settings = state.storage.load_app_settings()?;
-    settings.refresh_interval_ms = interval_ms;
-    state.storage.save_app_settings(&settings)?;
+    let updated = state
+        .settings
+        .update_settings(|s| {
+            s.refresh_interval_ms = interval_ms;
+        })
+        .map_err(ApiError::from)?;
+    let _ = state.storage.save_app_settings(&updated);
     state.set_interval_ms(interval_ms);
 
-    Ok(settings)
+    Ok(updated)
 }
 
 /// Переключает режим паузы мониторинга.
@@ -94,9 +130,13 @@ pub fn toggle_pause_metrics(state: State<'_, AppState>, paused: bool) -> Result<
         code: "STATE_LOCK_ERROR".into(),
         message: "Настройки недоступны".into(),
     })?;
-    let mut settings = state.storage.load_app_settings()?;
-    settings.is_monitoring_paused = paused;
-    state.storage.save_app_settings(&settings)?;
+    let updated = state
+        .settings
+        .update_settings(|s| {
+            s.is_monitoring_paused = paused;
+        })
+        .map_err(ApiError::from)?;
+    let _ = state.storage.save_app_settings(&updated);
     state.set_paused(paused);
 
     Ok(paused)

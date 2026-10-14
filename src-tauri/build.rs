@@ -14,6 +14,7 @@ fn main() {
             "get_app_settings",
             "save_refresh_interval",
             "toggle_pause_metrics",
+            "get_storage_resilience_status",
             "get_cleanup_availability",
             "get_execution_preview",
             "prepare_cleanup_confirmation",

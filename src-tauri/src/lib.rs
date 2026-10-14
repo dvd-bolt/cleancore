@@ -26,6 +26,7 @@ pub fn run() {
             commands::get_app_settings,
             commands::save_refresh_interval,
             commands::toggle_pause_metrics,
+            commands::get_storage_resilience_status,
             cleanup_commands::get_cleanup_availability,
             cleanup_commands::get_execution_preview,
             cleanup_commands::prepare_cleanup_confirmation,

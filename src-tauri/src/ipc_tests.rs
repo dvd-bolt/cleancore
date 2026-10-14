@@ -36,6 +36,9 @@ fn app() -> tauri::App<MockRuntime> {
         task_manager: Arc::new(TaskManager::with_execution(cleanup.clone())),
         disk_manager: Arc::new(cleaner_disk::tasks::DiskManager::new()),
         storage,
+        settings: Arc::new(cleaner_storage::SettingsManager::in_memory(
+            cleaner_core::models::AppSettings::default(),
+        )),
         cleanup,
         is_paused: AtomicBool::new(false),
         interval_ms: AtomicU64::new(2000),
@@ -49,6 +52,7 @@ fn app() -> tauri::App<MockRuntime> {
             commands::get_app_info,
             commands::get_app_settings,
             commands::save_refresh_interval,
+            commands::get_storage_resilience_status,
             commands::start_cleanup_scan,
             commands::get_scan_progress,
             commands::get_cleanup_preview,
@@ -204,4 +208,22 @@ fn untrusted_selection_and_disabled_execution_are_rejected() {
         .as_array()
         .unwrap()
         .is_empty());
+}
+
+#[test]
+fn test_get_storage_resilience_status_ipc() {
+    let app = app();
+    let window = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    let status = call(
+        &window,
+        "get_storage_resilience_status",
+        json!({}),
+        "http://tauri.localhost",
+    )
+    .unwrap();
+    assert_eq!(status["schema_version"], 2);
+    assert_eq!(status["db_recovered"], false);
+    assert_eq!(status["settings_recovered"], false);
 }

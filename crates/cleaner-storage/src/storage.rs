@@ -1,11 +1,14 @@
 //! Менеджер локального хранилища SQLite для настроек и журнала действий CleanCore.
 
+use crate::migrations;
+use crate::recovery::{self, StorageRecoveryNotice};
 use cleaner_core::errors::ApiError;
 use cleaner_core::models::AppSettings;
 use rusqlite::{params, Connection};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use thiserror::Error;
+use tracing::warn;
 
 /// Ошибки работы со слоем хранилища SQLite.
 #[derive(Debug, Error)]
@@ -13,7 +16,7 @@ pub enum StorageError {
     #[error("Ошибка SQLite: {0}")]
     Sqlite(#[from] rusqlite::Error),
 
-    #[error("Ошибка файловой системы при создании каталога хранилища: {0}")]
+    #[error("Ошибка файловой системы: {0}")]
     Io(#[from] std::io::Error),
 
     #[error("Ошибка сериализации/десериализации данных: {0}")]
@@ -21,6 +24,12 @@ pub enum StorageError {
 
     #[error("Ошибка блокировки подключения к базе данных: {0}")]
     Lock(String),
+
+    #[error("Неподдерживаемая версия схемы базы данных ({0}), требуется обновление CleanCore")]
+    UnsupportedSchemaVersion(i32),
+
+    #[error("Повреждение базы данных SQLite: {0}")]
+    CorruptDatabase(String),
 }
 
 impl From<StorageError> for ApiError {
@@ -38,10 +47,12 @@ pub struct StorageManager {
     db_path: PathBuf,
     // Prevent another desktop process from recovering our live journal as a crash.
     _audit_lock: Option<std::fs::File>,
+    recovery_notice: Option<StorageRecoveryNotice>,
 }
 
 impl StorageManager {
-    /// Открывает или создаёт базу данных SQLite по указанному пути.
+    /// Открывает или создаёт базу данных SQLite по указанному пути с применением миграций
+    /// и автоматическим карантином при обнаружении повреждений.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, StorageError> {
         let db_path = path.as_ref().to_path_buf();
 
@@ -51,27 +62,62 @@ impl StorageManager {
             }
         }
 
-        let audit_lock = Self::acquire_audit_lock(&db_path)?;
-        let conn = Connection::open(&db_path)?;
+        let mut recovery_notice: Option<StorageRecoveryNotice> = None;
+
+        let open_and_migrate =
+            |target: &Path| -> Result<(Connection, Option<std::fs::File>), StorageError> {
+                let lock = Self::acquire_audit_lock(target)?;
+                let mut conn = Connection::open(target)?;
+                conn.execute_batch("PRAGMA synchronous = FULL;")?;
+                migrations::apply_migrations(&mut conn)?;
+                Ok((conn, lock))
+            };
+
+        let (conn, audit_lock) = match open_and_migrate(&db_path) {
+            Ok(res) => res,
+            Err(err) if db_path.exists() && is_corruption_error(&err) => {
+                warn!(
+                    "База данных SQLite по пути {:?} повреждена ({err}). Изоляция в .corrupt и пересоздание.",
+                    db_path
+                );
+                // На Windows открытые дескрипторы уже сброшены, так как open_and_migrate вернул ошибку
+                let quarantined = recovery::quarantine_file(&db_path, "corrupt")?;
+                recovery::clean_sqlite_sidecars(&db_path);
+
+                let notice = StorageRecoveryNotice {
+                    original_path: db_path.clone(),
+                    quarantined_path: quarantined,
+                    timestamp_utc: recovery::simple_utc_now_iso(),
+                    reason: err.to_string(),
+                };
+                recovery_notice = Some(notice);
+
+                // Повторная попытка открытия на чистом файле
+                open_and_migrate(&db_path)?
+            }
+            Err(err) => return Err(err),
+        };
+
         let manager = Self {
             conn: Mutex::new(conn),
             db_path,
             _audit_lock: audit_lock,
+            recovery_notice,
         };
-        manager.init_schema()?;
         manager.init_audit()?;
         Ok(manager)
     }
 
     /// Создаёт хранилище в оперативной памяти (для unit-тестов).
     pub fn in_memory() -> Result<Self, StorageError> {
-        let conn = Connection::open_in_memory()?;
+        let mut conn = Connection::open_in_memory()?;
+        migrations::apply_migrations(&mut conn)?;
         let manager = Self {
             conn: Mutex::new(conn),
             db_path: PathBuf::from(":memory:"),
             _audit_lock: None,
+            recovery_notice: None,
         };
-        manager.init_schema()?;
         manager.init_audit()?;
         Ok(manager)
     }
@@ -87,26 +133,34 @@ impl StorageManager {
         }
     }
 
-    /// Инициализация схемы базы данных (таблица настроек).
-    fn init_schema(&self) -> Result<(), StorageError> {
-        let conn = self.lock_conn()?;
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );",
-            [],
-        )?;
-        Ok(())
-    }
-
-    pub(crate) fn lock_conn(&self) -> Result<MutexGuard<'_, Connection>, StorageError> {
+    pub fn lock_conn(&self) -> Result<MutexGuard<'_, Connection>, StorageError> {
         self.conn
             .lock()
             .map_err(|e| StorageError::Lock(format!("Мьютекс базы данных повреждён: {e}")))
     }
 
-    /// Возвращает значение настройки по ключу.
+    /// Возвращает текущую версию схемы базы данных.
+    pub fn current_schema_version(&self) -> Result<i32, StorageError> {
+        let conn = self.lock_conn()?;
+        migrations::get_user_version(&conn)
+    }
+
+    /// Возвращает уведомление о восстановлении базы данных, если оно производилось.
+    pub fn recovery_notice(&self) -> Option<&StorageRecoveryNotice> {
+        self.recovery_notice.as_ref()
+    }
+
+    /// Проверяет, производилось ли восстановление базы данных при запуске.
+    pub fn was_recovered(&self) -> bool {
+        self.recovery_notice.is_some()
+    }
+
+    /// Признак сохранения данных на постоянном носителе.
+    pub fn is_persistent(&self) -> bool {
+        self.db_path != Path::new(":memory:")
+    }
+
+    /// Возвращает значение настройки по ключу из таблицы `settings` SQLite.
     pub fn get_setting(&self, key: &str) -> Result<Option<String>, StorageError> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = ?1")?;
@@ -120,7 +174,7 @@ impl StorageManager {
         }
     }
 
-    /// Устанавливает или перезаписывает значение настройки по ключу.
+    /// Устанавливает или перезаписывает значение настройки по ключу в SQLite.
     pub fn set_setting(&self, key: &str, value: &str) -> Result<(), StorageError> {
         let conn = self.lock_conn()?;
         conn.execute(
@@ -131,13 +185,12 @@ impl StorageManager {
         Ok(())
     }
 
-    /// Загружает все пользовательские настройки с применением дефолтных значений.
+    /// Загружает пользовательские настройки из таблицы `settings` SQLite.
     pub fn load_app_settings(&self) -> Result<AppSettings, StorageError> {
         let mut settings = AppSettings::default();
 
         if let Some(interval_str) = self.get_setting("refresh_interval_ms")? {
             if let Ok(interval) = interval_str.parse::<u64>() {
-                // Допустимые интервалы: 2000, 5000, 10000 мс (с валидацией)
                 if (500..=60000).contains(&interval) {
                     settings.refresh_interval_ms = interval;
                 }
@@ -157,7 +210,7 @@ impl StorageManager {
         Ok(settings)
     }
 
-    /// Сохраняет пользовательские настройки в базу данных.
+    /// Сохраняет пользовательские настройки в SQLite (для обратной совместимости).
     pub fn save_app_settings(&self, settings: &AppSettings) -> Result<(), StorageError> {
         let mut conn = self.lock_conn()?;
         let tx = conn.transaction()?;
@@ -207,6 +260,15 @@ impl StorageManager {
             let _ = path;
             Ok(None)
         }
+    }
+}
+
+/// Проверяет, указывает ли ошибка на повреждение файла базы данных.
+fn is_corruption_error(err: &StorageError) -> bool {
+    match err {
+        StorageError::Sqlite(sqlite_err) => recovery::is_sqlite_corrupt_error(sqlite_err),
+        StorageError::CorruptDatabase(_) => true,
+        _ => false,
     }
 }
 
@@ -285,5 +347,11 @@ mod tests {
         assert_eq!(reloaded.refresh_interval_ms, 5000);
         assert_eq!(reloaded.theme, "studio-pearl");
         assert!(reloaded.is_monitoring_paused);
+    }
+
+    #[test]
+    fn test_schema_version_is_current() {
+        let storage = StorageManager::in_memory().expect("in-memory db");
+        assert_eq!(storage.current_schema_version().unwrap(), 2);
     }
 }

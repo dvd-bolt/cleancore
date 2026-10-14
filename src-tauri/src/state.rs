@@ -1,10 +1,9 @@
 //! Управление состоянием настольного приложения CleanCore.
 
 use cleaner_cleanup::tasks::TaskManager;
-use cleaner_core::cleanup::CleanupJournal;
 use cleaner_core::models::AppInfo;
 use cleaner_disk::tasks::DiskManager;
-use cleaner_storage::StorageManager;
+use cleaner_storage::{SettingsManager, StorageManager};
 use cleaner_system::collector::SystemCollector;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -14,6 +13,7 @@ pub struct AppState {
     pub app_info: Mutex<AppInfo>,
     pub collector: Mutex<SystemCollector>,
     pub storage: Arc<StorageManager>,
+    pub settings: Arc<SettingsManager>,
     pub task_manager: Arc<TaskManager>,
     pub disk_manager: Arc<DiskManager>,
     pub is_paused: AtomicBool,
@@ -33,7 +33,21 @@ impl Default for AppState {
             }
         };
 
-        let initial_settings = storage.load_app_settings().unwrap_or_default();
+        let settings_path = SettingsManager::default_settings_path();
+        let settings =
+            match SettingsManager::open_with_legacy_sqlite(&settings_path, Some(&storage)) {
+                Ok(mgr) => Arc::new(mgr),
+                Err(e) => {
+                    warn!(
+                        "Не удалось открыть settings.json ({e}), используются настройки в памяти"
+                    );
+                    Arc::new(SettingsManager::in_memory(
+                        cleaner_core::models::AppSettings::default(),
+                    ))
+                }
+            };
+
+        let initial_settings = settings.get_settings();
 
         let cleanup = Arc::new(cleaner_execution::CleanupService::new(
             storage.clone(),
@@ -45,11 +59,12 @@ impl Default for AppState {
                 version: "0.0.3".to_string(),
                 is_local_mode: true,
                 is_admin: cleaner_system::privileges::is_elevated(),
-                settings_persistent: storage.is_persistent(),
+                settings_persistent: storage.is_persistent() && settings.is_persistent(),
                 theme: initial_settings.theme,
             }),
             collector: Mutex::new(SystemCollector::new()),
             storage,
+            settings,
             task_manager: Arc::new(TaskManager::with_execution(cleanup.clone())),
             disk_manager: Arc::new(DiskManager::new()),
             is_paused: AtomicBool::new(initial_settings.is_monitoring_paused),

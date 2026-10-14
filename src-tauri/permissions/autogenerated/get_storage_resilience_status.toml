@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-storage-resilience-status"
+description = "Enables the get_storage_resilience_status command without any pre-configured scope."
+commands.allow = ["get_storage_resilience_status"]
+
+[[permission]]
+identifier = "deny-get-storage-resilience-status"
+description = "Denies the get_storage_resilience_status command without any pre-configured scope."
+commands.deny = ["get_storage_resilience_status"]
