@@ -121,7 +121,7 @@ pub fn get_scan_progress(
 ) -> Result<TaskStatus, ApiError> {
     state
         .task_manager
-        .get_task_status(&task_id)
+        .get_task_status(&task_id)?
         .ok_or_else(|| ApiError {
             code: "TASK_NOT_FOUND".into(),
             message: format!("Задача сканирования не найдена: {task_id}"),
@@ -131,7 +131,7 @@ pub fn get_scan_progress(
 /// Запрос безопасной отмены выполняющегося сканирования.
 #[tauri::command]
 pub fn cancel_cleanup_scan(state: State<'_, AppState>, task_id: String) -> Result<bool, ApiError> {
-    Ok(state.task_manager.cancel_scan(&task_id))
+    state.task_manager.cancel_scan(&task_id)
 }
 
 /// Порционная выдача результатов предварительного просмотра (Preview) без блокировки UI.
@@ -141,8 +141,9 @@ pub fn get_cleanup_preview(
     preview_id: String,
     offset: usize,
     limit: usize,
+    query: Option<String>,
 ) -> Result<CleanupPreviewPage, ApiError> {
     state
         .task_manager
-        .get_preview_page(&preview_id, offset, limit)
+        .get_preview_page(&preview_id, offset, limit, query.as_deref().unwrap_or(""))
 }

@@ -11,9 +11,9 @@ export async function getAvailability(): Promise<CleanupAvailability> {
   if (!isTauriEnvironment()) return { execution_enabled: false, persistent_journal: false, reason: "Предпросмотр: сканер, исполнитель и постоянный журнал не подключены." };
   return call("get_cleanup_availability");
 }
-export async function getExecutionPreview(): Promise<ExecutionPreview | null> {
+export async function getExecutionPreview(previewId: string | null = null): Promise<ExecutionPreview | null> {
   if (!isTauriEnvironment()) return null;
-  return call("get_execution_preview");
+  return call("get_execution_preview", { previewId });
 }
 export const prepareConfirmation = (previewId: string, selectedIds: string[]) => call<CleanupConfirmation>("prepare_cleanup_confirmation", { previewId, selectedIds });
 export const executeCleanup = (confirmationId: string, acknowledged: boolean) => call<CleanupOutcome>("start_confirmed_cleanup", { confirmationId, acknowledged });

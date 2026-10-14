@@ -1,230 +1,245 @@
-//! Потоковый безопасный сканер временных файлов с поддержкой отмены и лимитов.
-
-use cleaner_core::models::CleanupCandidate;
-use cleaner_core::safety::RiskLevel;
-use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, SystemTime};
-use uuid::Uuid;
-
-use crate::path_safety::{is_reparse_point_or_symlink, is_safe_target_file};
-use crate::rules::CleanupRule;
-
-/// Ограничения и параметры безопасного обхода.
+//! Bounded read-only traversal with scan-time identities and visible exclusions.
+use crate::{path_safety::is_reparse_point_or_symlink, rules::CleanupRule};
+use cleaner_core::{models::CleanupCandidate, safety::RiskLevel};
+use cleaner_execution::native::{capture_candidate, lock_directory, TrustedCandidate};
+use std::{
+    collections::BTreeMap,
+    path::Path,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant, SystemTime},
+};
 #[derive(Debug, Clone)]
 pub struct ScannerOptions {
-    /// Максимальная глубина рекурсии (защита от зацикливаний и бесконечных путей).
     pub max_depth: usize,
-    /// Максимальное число проверяемых файлов за один сеанс.
     pub max_scanned_files: usize,
-    /// Минимальный возраст файла для включения в кандидаты.
-    pub min_age: Duration,
+    pub max_candidates: usize,
+    pub max_duration: Duration,
 }
-
 impl Default for ScannerOptions {
     fn default() -> Self {
         Self {
             max_depth: 8,
             max_scanned_files: 50_000,
-            min_age: Duration::from_secs(7 * 24 * 3600), // 7 дней согласно ТЗ
+            max_candidates: cleaner_execution::MAX_CANDIDATES,
+            max_duration: Duration::from_secs(60),
         }
     }
 }
-
-/// Результат работы сканера.
 #[derive(Debug, Clone)]
 pub struct ScanResult {
-    /// Найденные кандидаты на очистку.
     pub candidates: Vec<CleanupCandidate>,
-    /// Общее количество просмотренных объектов.
+    pub identities: Vec<TrustedCandidate>,
     pub total_scanned_items: u64,
-    /// Общий размер найденных кандидатов в байтах.
     pub total_matched_bytes: u64,
-    /// Был ли сканер остановлен по запросу отмены.
     pub was_cancelled: bool,
-    /// Был ли достигнут лимит файлов (частичный результат).
     pub reached_limit: bool,
+    pub complete: bool,
+    pub diagnostics: BTreeMap<String, u64>,
+    pub fatal_error: Option<String>,
 }
-
-/// Выполняет постепенный безопасный обход каталога в соответствии с правилом.
-///
-/// Безопасность:
-/// - Проверяет `cancellation_token` на каждом шаге.
-/// - Не следует по symlinks, junctions и точкам монтирования.
-/// - Пропускает файлы с ошибками чтения без паники.
-/// - Никакие файлы не изменяются, не блокируются и не удаляются.
-pub fn scan_directory<F>(
+pub fn scan_directory<F: Fn(u64, u64, u64)>(
     root: &Path,
     rule: &CleanupRule,
     options: &ScannerOptions,
-    cancellation_token: Arc<AtomicBool>,
-    progress_fn: F,
-) -> ScanResult
-where
-    F: Fn(u64, u64, u64), // (scanned_items, matched_items, matched_bytes)
-{
-    let now = SystemTime::now();
+    cancel: Arc<AtomicBool>,
+    progress: F,
+) -> ScanResult {
     let mut context = ScanContext {
         root,
         rule,
         options,
-        now: &now,
-        cancellation_token: &cancellation_token,
-        candidates: Vec::new(),
-        scanned_count: 0,
-        matched_bytes: 0,
-        was_cancelled: false,
-        reached_limit: false,
-        progress_fn,
+        cancel,
+        progress,
+        now: SystemTime::now(),
+        started: Instant::now(),
+        result: ScanResult {
+            candidates: vec![],
+            identities: vec![],
+            total_scanned_items: 0,
+            total_matched_bytes: 0,
+            was_cancelled: false,
+            reached_limit: false,
+            complete: true,
+            diagnostics: BTreeMap::new(),
+            fatal_error: None,
+        },
     };
-
     context.scan_dir(root, 0);
-
-    ScanResult {
-        candidates: context.candidates,
-        total_scanned_items: context.scanned_count,
-        total_matched_bytes: context.matched_bytes,
-        was_cancelled: context.was_cancelled,
-        reached_limit: context.reached_limit,
+    if context.result.was_cancelled
+        || context.result.reached_limit
+        || context.result.fatal_error.is_some()
+    {
+        context.result.complete = false;
     }
+    (context.progress)(
+        context.result.total_scanned_items,
+        context.result.candidates.len() as u64,
+        context.result.total_matched_bytes,
+    );
+    context.result
 }
-
 struct ScanContext<'a, F> {
     root: &'a Path,
     rule: &'a CleanupRule,
     options: &'a ScannerOptions,
-    now: &'a SystemTime,
-    cancellation_token: &'a Arc<AtomicBool>,
-    candidates: Vec<CleanupCandidate>,
-    scanned_count: u64,
-    matched_bytes: u64,
-    was_cancelled: bool,
-    reached_limit: bool,
-    progress_fn: F,
+    cancel: Arc<AtomicBool>,
+    progress: F,
+    now: SystemTime,
+    started: Instant,
+    result: ScanResult,
 }
-
-impl<'a, F: Fn(u64, u64, u64)> ScanContext<'a, F> {
-    fn scan_dir(&mut self, current_dir: &Path, depth: usize) {
-        // 1. Проверка отмены
-        if self.cancellation_token.load(Ordering::Relaxed) {
-            self.was_cancelled = true;
-            return;
+impl<F: Fn(u64, u64, u64)> ScanContext<'_, F> {
+    fn reason(&mut self, code: &str) {
+        *self.result.diagnostics.entry(code.into()).or_default() += 1;
+    }
+    fn stop(&mut self) -> bool {
+        if self.cancel.load(Ordering::Acquire) {
+            self.result.was_cancelled = true;
+            return true;
         }
-
-        // 2. Проверка ограничений глубины
-        if depth > self.options.max_depth {
-            return;
-        }
-
-        // 3. Проверка лимита файлов
-        if self.scanned_count as usize >= self.options.max_scanned_files {
-            self.reached_limit = true;
-            return;
-        }
-
-        // 4. Чтение содержимого каталога (безопасный пропуск при отказе доступа)
-        let read_dir = match std::fs::read_dir(current_dir) {
-            Ok(rd) => rd,
-            Err(_) => return, // AccessDenied или занятый каталог безопасно пропускается
+        let code = if self.result.total_scanned_items >= self.options.max_scanned_files as u64 {
+            Some("ENTRY_LIMIT")
+        } else if self.result.candidates.len() >= self.options.max_candidates {
+            Some("CANDIDATE_LIMIT")
+        } else if self.started.elapsed() >= self.options.max_duration {
+            Some("TIME_LIMIT")
+        } else {
+            None
         };
-
-        for entry in read_dir.flatten() {
-            if self.cancellation_token.load(Ordering::Relaxed) {
-                self.was_cancelled = true;
-                return;
-            }
-
-            if self.scanned_count as usize >= self.options.max_scanned_files {
-                self.reached_limit = true;
-                return;
-            }
-
-            self.scanned_count = self.scanned_count.saturating_add(1);
-            let path = entry.path();
-
-            // Пропуск reparse points и symlinks
-            if is_reparse_point_or_symlink(&path) {
-                continue;
-            }
-
-            let file_type = match entry.file_type() {
-                Ok(ft) => ft,
-                Err(_) => continue,
-            };
-
-            if file_type.is_dir() {
-                // Рекурсивный спуск в подкаталог
-                self.scan_dir(&path, depth + 1);
-
-                if self.was_cancelled || self.reached_limit {
-                    return;
+        if let Some(code) = code {
+            self.result.reached_limit = true;
+            self.reason(code);
+            return true;
+        }
+        false
+    }
+    fn scan_dir(&mut self, dir: &Path, depth: usize) {
+        if self.stop() {
+            return;
+        }
+        if depth > self.options.max_depth {
+            self.result.complete = false;
+            self.reason("DEPTH_LIMIT");
+            return;
+        }
+        let Ok(relative) = dir.strip_prefix(self.root) else {
+            self.result.complete = false;
+            self.reason("OUTSIDE_ROOT");
+            return;
+        };
+        // Bound all ancestors while iterating this directory. This blocks parent
+        // replacement/reparse mutation, rather than checking only string prefixes.
+        let _lease = match lock_directory(self.root, relative) {
+            Ok(v) => v,
+            Err(code) => {
+                self.reason(code);
+                self.result.complete = false;
+                if depth == 0 {
+                    self.result.fatal_error = Some(code.into());
                 }
-            } else if file_type.is_file() {
-                // Проверка обычного файла
-                if !is_safe_target_file(self.root, &path) {
+                return;
+            }
+        };
+        let entries = match std::fs::read_dir(dir) {
+            Ok(v) => v,
+            Err(_) => {
+                self.reason("READ_DIRECTORY_FAILED");
+                self.result.complete = false;
+                if depth == 0 {
+                    self.result.fatal_error = Some("READ_DIRECTORY_FAILED".into());
+                }
+                return;
+            }
+        };
+        for entry in entries {
+            if self.stop() {
+                return;
+            }
+            self.result.total_scanned_items += 1;
+            if self.result.total_scanned_items.is_multiple_of(100) {
+                (self.progress)(
+                    self.result.total_scanned_items,
+                    self.result.candidates.len() as u64,
+                    self.result.total_matched_bytes,
+                );
+            }
+            let entry = match entry {
+                Ok(v) => v,
+                Err(_) => {
+                    self.reason("READ_ENTRY_FAILED");
+                    self.result.complete = false;
                     continue;
                 }
-
-                let meta = match entry.metadata() {
-                    Ok(m) => m,
-                    Err(_) => continue,
-                };
-
-                let size = meta.len();
-                let modified = match meta.modified() {
-                    Ok(mod_time) => mod_time,
-                    Err(_) => continue,
-                };
-
-                // Проверка возраста: файл должен быть не моложе min_age (7 дней)
-                let age_ok = match self.now.duration_since(modified) {
-                    Ok(age) => age >= self.options.min_age,
-                    Err(_) => false, // Время в будущем пропускается
-                };
-
-                if age_ok {
-                    let obj_id = Uuid::new_v4().to_string();
-                    let display_path = path
-                        .strip_prefix(self.root)
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_else(|_| path.to_string_lossy().to_string());
-
-                    let modified_utc = system_time_to_iso(modified);
-
-                    self.matched_bytes = self.matched_bytes.saturating_add(size);
-
-                    self.candidates.push(CleanupCandidate {
-                        obj_id,
-                        display_path,
-                        absolute_path: path.to_string_lossy().to_string(),
-                        size_bytes: size,
-                        category_id: self.rule.id.clone(),
-                        reason: format!("Файл не изменялся более {} суток", self.rule.min_age_days),
-                        modified_time_utc: modified_utc,
-                        risk_level: RiskLevel::Low,
-                    });
-
-                    // Периодическое оповещение о прогрессе (каждые 20 кандидатов или файлов)
-                    if self.candidates.len().is_multiple_of(20)
-                        || self.scanned_count.is_multiple_of(100)
-                    {
-                        (self.progress_fn)(
-                            self.scanned_count,
-                            self.candidates.len() as u64,
-                            self.matched_bytes,
-                        );
-                    }
-                }
+            };
+            let path = entry.path();
+            if is_reparse_point_or_symlink(&path) {
+                self.reason("REPARSE_OR_UNAVAILABLE");
+                continue;
             }
+            let kind = match entry.file_type() {
+                Ok(v) => v,
+                Err(_) => {
+                    self.reason("TYPE_UNAVAILABLE");
+                    continue;
+                }
+            };
+            if kind.is_dir() {
+                self.scan_dir(&path, depth + 1);
+                if self.result.was_cancelled || self.result.reached_limit {
+                    return;
+                }
+                continue;
+            }
+            if !kind.is_file() {
+                self.reason("NOT_REGULAR_FILE");
+                continue;
+            }
+            let relative = match path.strip_prefix(self.root) {
+                Ok(v) => v,
+                Err(_) => {
+                    self.reason("OUTSIDE_ROOT");
+                    continue;
+                }
+            };
+            let object = match capture_candidate(self.root, relative) {
+                Ok(v) => v,
+                Err(code) => {
+                    self.reason(code);
+                    continue;
+                }
+            };
+            let modified = match object.modified_time() {
+                Some(v) => v,
+                None => {
+                    self.reason("TIME_UNAVAILABLE");
+                    continue;
+                }
+            };
+            if !self
+                .now
+                .duration_since(modified)
+                .is_ok_and(|age| age >= self.rule.min_age_duration())
+            {
+                self.reason("TOO_RECENT_OR_FUTURE");
+                continue;
+            }
+            let size = object.size_bytes();
+            self.result.total_matched_bytes = self.result.total_matched_bytes.saturating_add(size);
+            self.result.candidates.push(CleanupCandidate {
+                obj_id: object.object_id().into(),
+                display_path: relative.to_string_lossy().into_owned(),
+                absolute_path: object.display_path(),
+                size_bytes: size.to_string(),
+                category_id: self.rule.id.clone(),
+                reason: format!("Не изменялся не менее {} суток", self.rule.min_age_days),
+                modified_time_utc: system_time_to_iso(modified),
+                risk_level: RiskLevel::Low,
+            });
+            self.result.identities.push(object);
         }
-
-        // Финальное оповещение по каталогу
-        (self.progress_fn)(
-            self.scanned_count,
-            self.candidates.len() as u64,
-            self.matched_bytes,
-        );
     }
 }
 
@@ -256,49 +271,4 @@ fn days_to_ymd(days_since_epoch: i64) -> (i32, u32, u32) {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
     (y, m, d)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_scanner_respects_age_filter() {
-        let temp_dir = std::env::temp_dir().join(format!("cc_test_{}", Uuid::new_v4()));
-        std::fs::create_dir_all(&temp_dir).unwrap();
-
-        let fresh_file = temp_dir.join("fresh.tmp");
-        std::fs::write(&fresh_file, b"fresh data").unwrap();
-
-        let rule = CleanupRule::user_temp_v1();
-        let options = ScannerOptions::default();
-        let cancel = Arc::new(AtomicBool::new(false));
-
-        let res = scan_directory(&temp_dir, &rule, &options, cancel, |_, _, _| {});
-
-        // Свежий файл (возраст < 7 дней) НЕ должен попасть в кандидаты
-        assert_eq!(res.candidates.len(), 0);
-        assert_eq!(res.total_scanned_items, 1);
-
-        let _ = std::fs::remove_dir_all(temp_dir);
-    }
-
-    #[test]
-    fn test_scanner_cancellation() {
-        let temp_dir = std::env::temp_dir().join(format!("cc_test_cancel_{}", Uuid::new_v4()));
-        std::fs::create_dir_all(&temp_dir).unwrap();
-
-        for i in 0..10 {
-            std::fs::write(temp_dir.join(format!("{i}.tmp")), b"data").unwrap();
-        }
-
-        let rule = CleanupRule::user_temp_v1();
-        let options = ScannerOptions::default();
-        let cancel = Arc::new(AtomicBool::new(true)); // Изначально отменён
-
-        let res = scan_directory(&temp_dir, &rule, &options, cancel, |_, _, _| {});
-        assert!(res.was_cancelled);
-
-        let _ = std::fs::remove_dir_all(temp_dir);
-    }
 }

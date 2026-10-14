@@ -9,8 +9,15 @@ description = "CleanCore Cleanup Rule Engine, Path Guard, Safe Scanner and Previ
 
 [dependencies]
 cleaner-core = { path = "../cleaner-core" }
+cleaner-execution = { path = "../cleaner-execution" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 uuid = { version = "1.0", features = ["v4", "serde"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_UI_Shell", "Win32_System_Com"] }
+
+[dev-dependencies]
+cleaner-storage = { path = "../cleaner-storage" }

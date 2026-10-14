@@ -1,168 +1,159 @@
-//! Проверка безопасности путей, защита от traversal и исключение ссылок Windows.
-
+//! The category root comes from Windows Known Folders, never TEMP/LOCALAPPDATA.
 use cleaner_core::errors::CoreError;
-use cleaner_core::safety::PathGuard;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+
+pub fn is_reparse_point_or_symlink(path: &Path) -> bool {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) => {
+            if meta.file_type().is_symlink() {
+                return true;
+            }
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::MetadataExt;
+                meta.file_attributes() & 0x400 != 0
+            }
+            #[cfg(not(windows))]
+            {
+                false
+            }
+        }
+        Err(_) => true,
+    }
+}
+
+pub fn resolve_user_temp_root() -> Result<PathBuf, CoreError> {
+    let candidate = local_app_data()?.join("Temp");
+    validate_temp_root_boundary(&candidate)?;
+    let _lease =
+        cleaner_execution::native::lock_directory(&candidate, Path::new("")).map_err(|code| {
+            CoreError::InvalidPath(format!(
+                "Временный каталог недоступен или перенаправлен: {code}"
+            ))
+        })?;
+    // Do not silently fall back to an unverified path.
+    candidate
+        .canonicalize()
+        .map_err(|_| CoreError::InvalidPath("Не удалось проверить временный каталог".into()))
+}
 
 #[cfg(windows)]
-use std::os::windows::fs::MetadataExt;
-
-/// Битовая маска Windows для FILE_ATTRIBUTE_REPARSE_POINT (0x00000400).
-/// Reparse points включают NTFS junctions, symlinks, app execution aliases и cloud placeholders.
-const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
-
-/// Проверяет, является ли объект файловой системы reparse point, junction или symlink.
-/// Любые ссылки строго пропускаются сканером для исключения обхода чужих директорий.
-pub fn is_reparse_point_or_symlink(path: &Path) -> bool {
-    let symlink_metadata = match std::fs::symlink_metadata(path) {
-        Ok(meta) => meta,
-        Err(_) => return true, // При ошибке чтения метаданных считаем объект небезопасным и пропускаем
+fn local_app_data() -> Result<PathBuf, CoreError> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::{
+        System::Com::CoTaskMemFree,
+        UI::Shell::{FOLDERID_LocalAppData, SHGetKnownFolderPath},
     };
-
-    if symlink_metadata.file_type().is_symlink() {
-        return true;
-    }
-
-    #[cfg(windows)]
-    {
-        let attrs = symlink_metadata.file_attributes();
-        if (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0 {
-            return true;
-        }
-    }
-
-    false
-}
-
-/// Находит и верифицирует безопасный корневой каталог временных файлов текущего пользователя.
-///
-/// Безопасность:
-/// - Проверяет наличие переменной окружения `LOCALAPPDATA` или `TEMP`.
-/// - Убеждается, что путь существует, является директорией и не указывает на критические области Windows.
-/// - Не доверяет перенаправленным корням, если они указывают на корень диска или системные каталоги.
-pub fn resolve_user_temp_root() -> Result<PathBuf, CoreError> {
-    let candidate = if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
-        PathBuf::from(local_app_data).join("Temp")
-    } else if let Ok(temp) = std::env::var("TEMP") {
-        PathBuf::from(temp)
-    } else {
+    let mut output = std::ptr::null_mut();
+    // SAFETY: valid known-folder GUID and writable output; Windows allocates a NUL-terminated UTF-16 string.
+    let result = unsafe {
+        SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, std::ptr::null_mut(), &mut output)
+    };
+    if result < 0 || output.is_null() {
         return Err(CoreError::InvalidPath(
-            "Не удалось определить временный каталог текущего пользователя (%LOCALAPPDATA%\\Temp)"
-                .into(),
+            "Windows не предоставила LocalAppData текущего пользователя".into(),
         ));
+    }
+    let mut length = 0;
+    // Windows paths are bounded to 32767 UTF-16 code units.
+    while length < 32768 && unsafe { *output.add(length) } != 0 {
+        length += 1;
+    }
+    let path = if length < 32768 {
+        // SAFETY: length was bounded by the NUL terminator in the returned Windows string.
+        Some(PathBuf::from(std::ffi::OsString::from_wide(unsafe {
+            std::slice::from_raw_parts(output, length)
+        })))
+    } else {
+        None
     };
-
-    if !candidate.exists() {
-        return Err(CoreError::InvalidPath(format!(
-            "Временный каталог не существует: {}",
-            candidate.display()
-        )));
-    }
-
-    if !candidate.is_dir() {
-        return Err(CoreError::InvalidPath(format!(
-            "Временный путь не является каталогом: {}",
-            candidate.display()
-        )));
-    }
-
-    // Защита от опасных корней (Windows, System32, Program Files, корень диска)
-    validate_temp_root_boundary(&candidate)?;
-
-    // Канонизируем путь для однозначного сопоставления
-    let canonical = std::fs::canonicalize(&candidate).unwrap_or(candidate);
-    Ok(canonical)
+    // SAFETY: the pointer was allocated by SHGetKnownFolderPath and is released exactly once.
+    unsafe { CoTaskMemFree(output.cast()) };
+    path.ok_or_else(|| CoreError::InvalidPath("Некорректный Known Folder path".into()))
+}
+#[cfg(not(windows))]
+fn local_app_data() -> Result<PathBuf, CoreError> {
+    Err(CoreError::InvalidPath(
+        "Категория поддерживается только в Windows".into(),
+    ))
 }
 
-/// Проверяет, что каталог не попадает в список критически важных системных областей ОС.
+/// Lexical rejection complements (but never replaces) native ancestor checks.
 pub fn validate_temp_root_boundary(root: &Path) -> Result<(), CoreError> {
-    let path_str = root.to_string_lossy().to_uppercase();
-
-    // Запрет корней дисков (C:\, D:\)
-    if path_str.len() <= 3 && path_str.contains(':') {
-        return Err(CoreError::PathTraversalDetected(
-            "Временный каталог не может указывать на корень диска".into(),
+    if !root.is_absolute()
+        || root
+            .components()
+            .any(|c| matches!(c, Component::ParentDir | Component::CurDir))
+    {
+        return Err(CoreError::InvalidPath(
+            "Корень должен быть абсолютным без traversal".into(),
         ));
     }
-
-    // Запрет системных каталогов
-    let forbidden_prefixes = [
-        "\\WINDOWS",
-        "\\SYSTEM32",
-        "\\PROGRAM FILES",
-        "\\PROGRAM FILES (X86)",
-        "\\PROGRAMDATA",
-    ];
-
-    for forbidden in &forbidden_prefixes {
-        if path_str.contains(forbidden) {
-            return Err(CoreError::PathTraversalDetected(format!(
-                "Временный каталог находится в запрещённой системной области: {}",
-                root.display()
-            )));
-        }
+    #[cfg(windows)]
+    if !matches!(root.components().next(),Some(Component::Prefix(p)) if matches!(p.kind(),std::path::Prefix::Disk(_)|std::path::Prefix::VerbatimDisk(_)))
+    {
+        return Err(CoreError::InvalidPath(
+            "Сетевые и device-корни не поддерживаются".into(),
+        ));
     }
-
-    // Каталог должен содержать 'TEMP'
-    if !path_str.ends_with("TEMP") && !path_str.ends_with("TEMP\\") {
-        return Err(CoreError::InvalidPath(format!(
-            "Каталог не является временной папкой пользователя (ожидалось окончание на Temp): {}",
-            root.display()
-        )));
+    let normal: Vec<_> = root
+        .components()
+        .filter_map(|c| {
+            if let Component::Normal(n) = c {
+                Some(n.to_string_lossy().to_ascii_lowercase())
+            } else {
+                None
+            }
+        })
+        .collect();
+    if normal.last().map(String::as_str) != Some("temp")
+        || normal.iter().any(|part| {
+            part.contains([':', '\0'])
+                || [
+                    "windows",
+                    "system32",
+                    "program files",
+                    "program files (x86)",
+                    "programdata",
+                ]
+                .contains(&part.as_str())
+        })
+    {
+        return Err(CoreError::InvalidPath(
+            "Недопустимый корень категории временных файлов".into(),
+        ));
     }
-
     Ok(())
 }
 
-/// Проверяет, что файл является обычным файлом, не ссылкой и находится строго внутри корня.
-pub fn is_safe_target_file(root: &Path, file_path: &Path) -> bool {
-    // 1. Проверка на выход за пределы корня через PathGuard
-    if PathGuard::ensure_within_root(root, file_path).is_err() {
+pub fn is_safe_target_file(root: &Path, path: &Path) -> bool {
+    let Ok(relative) = path.strip_prefix(root) else {
         return false;
-    }
-
-    // 2. Проверка на junction / reparse point / symlink
-    if is_reparse_point_or_symlink(file_path) {
-        return false;
-    }
-
-    // 3. Проверка метаданных: должен быть обычный файл
-    match std::fs::metadata(file_path) {
-        Ok(meta) => meta.is_file(),
-        Err(_) => false,
-    }
+    };
+    cleaner_execution::native::capture_candidate(root, relative).is_ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn test_boundary_validation_rejects_system_dirs() {
-        let win_dir = PathBuf::from("C:\\Windows\\Temp");
-        assert!(validate_temp_root_boundary(&win_dir).is_err());
-
-        let root_dir = PathBuf::from("C:\\");
-        assert!(validate_temp_root_boundary(&root_dir).is_err());
-
-        let prog_files = PathBuf::from("C:\\Program Files\\Temp");
-        assert!(validate_temp_root_boundary(&prog_files).is_err());
-    }
-
-    #[test]
-    fn test_boundary_validation_accepts_valid_user_temp() {
-        let valid = PathBuf::from("C:\\Users\\User\\AppData\\Local\\Temp");
-        assert!(validate_temp_root_boundary(&valid).is_ok());
-    }
-
-    #[test]
-    fn test_is_safe_target_file_within_root() {
-        let temp_dir = std::env::temp_dir();
-        let test_file = temp_dir.join("cleancore_test_file.tmp");
-        std::fs::write(&test_file, b"test content").unwrap();
-
-        assert!(is_safe_target_file(&temp_dir, &test_file));
-
-        let _ = std::fs::remove_file(test_file);
+    fn boundary_accepts_only_normal_local_temp_paths() {
+        #[cfg(windows)]
+        {
+            assert!(
+                validate_temp_root_boundary(Path::new(r"C:\Users\User\AppData\Local\Temp")).is_ok()
+            );
+            for p in [
+                r"C:\Windows\Temp",
+                r"C:\",
+                r"C:\Program Files\Temp",
+                r"C:\Users\User\NotTemp",
+                r"C:\Users\User\..\Temp",
+                r"\\server\share\Temp",
+                r"\\?\GLOBALROOT\Temp",
+            ] {
+                assert!(validate_temp_root_boundary(Path::new(p)).is_err(), "{p}");
+            }
+        }
     }
 }

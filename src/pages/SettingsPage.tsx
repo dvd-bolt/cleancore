@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { isTauriEnvironment } from "../lib/ipc";
 import { AppInfo, AppSettings } from "../types";
 import { Sliders, Shield, Palette, Info, Database, Check } from "lucide-react";
@@ -14,6 +14,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   settings,
   onUpdateInterval,
 }) => {
+  const timer = useRef<number | null>(null);
+  const savingGuard = useRef(false);
+  useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -23,6 +26,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   ).toString();
 
   const handleIntervalChange = async (sec: "2" | "5" | "10") => {
+    if (savingGuard.current) return; savingGuard.current = true;
     setSaving(true);
     setSavedSuccess(false);
     setSaveError(null);
@@ -30,10 +34,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       const ms = parseInt(sec, 10) * 1000;
       await onUpdateInterval(ms);
       setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 2500);
+      if (timer.current !== null) window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => setSavedSuccess(false), 2500);
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
     } finally {
+      savingGuard.current = false;
       setSaving(false);
     }
   };
@@ -69,7 +75,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 </h3>
                 {savedSuccess && (
                   <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-mono">
-                    <Check className="w-3 h-3" /> {isTauriEnvironment() ? "Сохранено в SQLite" : "Изменено только в предпросмотре"}
+                    <Check className="w-3 h-3" /> {isTauriEnvironment() ? (appInfo?.settings_persistent ? "Сохранено в SQLite" : "Изменено только в памяти") : "Изменено только в предпросмотре"}
                   </span>
                 )}
               </div>
@@ -178,7 +184,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </div>
 
           <span className="font-mono text-xs text-dim">
-            Версия {appInfo?.version || "0.0.2"} (Этап 2)
+            Версия {appInfo?.version || "нет данных"}
           </span>
         </div>
       </div>

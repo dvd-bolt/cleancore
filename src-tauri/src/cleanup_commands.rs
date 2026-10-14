@@ -18,8 +18,14 @@ pub fn get_cleanup_availability(state: State<'_, AppState>) -> CleanupAvailabili
 #[tauri::command]
 pub fn get_execution_preview(
     state: State<'_, AppState>,
+    preview_id: Option<String>,
 ) -> Result<Option<CleanupPreview>, ApiError> {
-    state.cleanup.latest_preview()
+    if let Some(id) = preview_id {
+        validate_id(&id)?;
+        state.cleanup.preview(&id)
+    } else {
+        Ok(None)
+    }
 }
 #[tauri::command]
 pub fn prepare_cleanup_confirmation(

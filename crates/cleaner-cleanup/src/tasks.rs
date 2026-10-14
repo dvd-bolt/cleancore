@@ -1,238 +1,320 @@
-//! Управление фоновыми задачами сканирования и порционной выдачей preview.
-
-use cleaner_core::errors::ApiError;
-use cleaner_core::models::{CleanupCandidate, CleanupPreviewPage, TaskState, TaskStatus};
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread;
-use tracing::info;
+//! One active scan, bounded snapshots, typed failures and exact scan-to-execution binding.
+use crate::{
+    path_safety::resolve_user_temp_root,
+    rules::RuleCatalog,
+    scanner::{scan_directory, ScannerOptions},
+};
+use cleaner_core::{
+    errors::ApiError,
+    models::{CleanupCandidate, CleanupPreviewPage, TaskState, TaskStatus},
+};
+use cleaner_execution::CleanupService;
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    thread,
+    time::{Duration, Instant},
+};
 use uuid::Uuid;
-
-use crate::path_safety::resolve_user_temp_root;
-use crate::rules::RuleCatalog;
-use crate::scanner::{scan_directory, ScannerOptions};
-
-/// Снимок результатов сканирования, сохранённый в памяти backend.
 #[derive(Debug, Clone)]
 pub struct StoredPreview {
     pub preview_id: String,
     pub category_id: String,
+    pub rule_version: String,
     pub scanned_time_utc: String,
     pub total_bytes: u64,
     pub candidates: Vec<CleanupCandidate>,
+    pub complete: bool,
+    pub cancelled: bool,
+    pub diagnostics: BTreeMap<String, u64>,
+    pub execution_preview_id: Option<String>,
+    created: Instant,
 }
-
-/// Менеджер задач анализа и кэширования результатов preview.
+struct Entry {
+    status: TaskStatus,
+    cancel: Arc<AtomicBool>,
+    preview: Option<StoredPreview>,
+    created: Instant,
+}
+struct Registry {
+    entries: HashMap<String, Entry>,
+    active: Option<String>,
+}
 pub struct TaskManager {
     catalog: RuleCatalog,
-    tasks: Arc<Mutex<HashMap<String, TaskStatus>>>,
-    cancellation_tokens: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
-    previews: Arc<Mutex<HashMap<String, StoredPreview>>>,
+    registry: Arc<Mutex<Registry>>,
+    execution: Option<Arc<CleanupService>>,
 }
-
+fn error(code: &str, message: &str) -> ApiError {
+    ApiError {
+        code: code.into(),
+        message: message.into(),
+    }
+}
+const RETENTION: Duration = Duration::from_secs(600);
 impl Default for TaskManager {
     fn default() -> Self {
         Self::new()
     }
 }
-
 impl TaskManager {
     pub fn new() -> Self {
         Self {
             catalog: RuleCatalog::new(),
-            tasks: Arc::new(Mutex::new(HashMap::new())),
-            cancellation_tokens: Arc::new(Mutex::new(HashMap::new())),
-            previews: Arc::new(Mutex::new(HashMap::new())),
+            registry: Arc::new(Mutex::new(Registry {
+                entries: HashMap::new(),
+                active: None,
+            })),
+            execution: None,
         }
     }
-
-    /// Инициирует фоновую задачу безопасного сканирования категории.
-    pub fn start_scan(&self, category_id: &str) -> Result<String, ApiError> {
+    pub fn with_execution(execution: Arc<CleanupService>) -> Self {
+        let mut manager = Self::new();
+        manager.execution = Some(execution);
+        manager
+    }
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, Registry>, ApiError> {
+        self.registry
+            .lock()
+            .map_err(|_| error("SCAN_STATE", "Состояние сканирования недоступно"))
+    }
+    pub fn start_scan(&self, category: &str) -> Result<String, ApiError> {
+        if self.catalog.get_rule(category).is_none() {
+            return Err(error("UNKNOWN_CATEGORY", "Неизвестная категория"));
+        }
+        let root = resolve_user_temp_root().map_err(|_| {
+            error(
+                "INVALID_TEMP_ROOT",
+                "Windows-каталог временных файлов недоступен или перенаправлен; анализ не начат",
+            )
+        })?;
+        self.start_at_root(category, root, ScannerOptions::default())
+    }
+    fn start_at_root(
+        &self,
+        category: &str,
+        root: PathBuf,
+        options: ScannerOptions,
+    ) -> Result<String, ApiError> {
         let rule = self
             .catalog
-            .get_rule(category_id)
-            .ok_or_else(|| ApiError {
-                code: "UNKNOWN_CATEGORY".into(),
-                message: format!("Неизвестная категория очистки: {category_id}"),
-            })?
+            .get_rule(category)
+            .ok_or_else(|| error("UNKNOWN_CATEGORY", "Неизвестная категория"))?
             .clone();
-
-        let temp_root = resolve_user_temp_root().map_err(|e| ApiError {
-            code: "INVALID_TEMP_ROOT".into(),
-            message: format!("Ошибка проверки временного каталога: {e}"),
-        })?;
-
-        let task_id = Uuid::new_v4().to_string();
-        let cancel_token = Arc::new(AtomicBool::new(false));
-
-        // Регистрация начального статуса задачи
-        let initial_status = TaskStatus {
-            id: task_id.clone(),
-            kind: format!("scan:{}", rule.id),
-            state: TaskState::Running,
-            processed_items: 0,
-            total_items: None,
-            error_message: None,
-        };
-
+        let id = Uuid::new_v4().to_string();
+        let cancel = Arc::new(AtomicBool::new(false));
         {
-            let mut tasks = self.tasks.lock().unwrap();
-            tasks.insert(task_id.clone(), initial_status);
-
-            let mut tokens = self.cancellation_tokens.lock().unwrap();
-            tokens.insert(task_id.clone(), Arc::clone(&cancel_token));
-        }
-
-        // Запуск рабочего потока сканирования
-        let thread_task_id = task_id.clone();
-        let tasks_ref = Arc::clone(&self.tasks);
-        let previews_ref = Arc::clone(&self.previews);
-        let options = ScannerOptions::default();
-
-        info!(
-            "Запуск задачи сканирования {thread_task_id} для каталога {}",
-            temp_root.display()
-        );
-
-        thread::spawn(move || {
-            let status_updater_tasks = Arc::clone(&tasks_ref);
-            let updater_task_id = thread_task_id.clone();
-
-            let result = scan_directory(
-                &temp_root,
-                &rule,
-                &options,
-                cancel_token,
-                move |scanned, _matched, _bytes| {
-                    if let Ok(mut tasks) = status_updater_tasks.lock() {
-                        if let Some(st) = tasks.get_mut(&updater_task_id) {
-                            st.processed_items = scanned;
-                        }
-                    }
-                },
-            );
-
-            // Фиксация завершения задачи
-            let final_state = if result.was_cancelled {
-                TaskState::Cancelled
-            } else {
-                TaskState::Completed
-            };
-
-            let preview_id = thread_task_id.clone();
-            let total_bytes = result.total_matched_bytes;
-
-            // Сохранение preview
-            {
-                let mut previews = previews_ref.lock().unwrap();
-                previews.insert(
-                    preview_id.clone(),
-                    StoredPreview {
-                        preview_id: preview_id.clone(),
-                        category_id: rule.id,
-                        scanned_time_utc: crate::scanner::system_time_to_iso(
-                            std::time::SystemTime::now(),
-                        ),
-                        total_bytes,
-                        candidates: result.candidates,
-                    },
-                );
+            let mut r = self.lock()?;
+            if r.active.is_some() {
+                return Err(error("SCAN_BUSY", "Сканирование уже выполняется"));
             }
-
-            // Обновление финального статуса задачи
-            {
-                let mut tasks = tasks_ref.lock().unwrap();
-                if let Some(st) = tasks.get_mut(&thread_task_id) {
-                    st.state = final_state;
-                    st.processed_items = result.total_scanned_items;
-                    st.total_items = Some(result.total_scanned_items);
+            r.entries.retain(|_, e| e.created.elapsed() < RETENTION);
+            if r.entries.len() >= 8 {
+                if let Some(oldest) = r
+                    .entries
+                    .iter()
+                    .min_by_key(|(_, e)| e.created)
+                    .map(|(id, _)| id.clone())
+                {
+                    r.entries.remove(&oldest);
                 }
             }
-
-            info!(
-                "Задача сканирования {thread_task_id} завершена со статусом {:?}",
-                final_state
+            r.entries.insert(
+                id.clone(),
+                Entry {
+                    status: TaskStatus {
+                        id: id.clone(),
+                        kind: format!("scan:{}", rule.id),
+                        state: TaskState::Running,
+                        processed_items: 0,
+                        total_items: None,
+                        error_message: None,
+                    },
+                    cancel: cancel.clone(),
+                    preview: None,
+                    created: Instant::now(),
+                },
             );
-        });
-
-        Ok(task_id)
+            r.active = Some(id.clone());
+        }
+        let registry = self.registry.clone();
+        let execution = self.execution.clone();
+        let worker_id = id.clone();
+        let spawned = thread::Builder::new()
+            .name("cleancore-scan".into())
+            .spawn(move || {
+                let progress_registry = registry.clone();
+                let progress_id = worker_id.clone();
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    scan_directory(&root, &rule, &options, cancel, move |count, _, _| {
+                        if let Ok(mut r) = progress_registry.lock() {
+                            if let Some(entry) = r.entries.get_mut(&progress_id) {
+                                entry.status.processed_items = count;
+                            }
+                        }
+                    })
+                }));
+                if let Ok(mut r) = registry.lock() {
+                    r.active = None;
+                    if let Some(entry) = r.entries.get_mut(&worker_id) {
+                        match result {
+                            Err(_) => {
+                                entry.status.state = TaskState::Failed;
+                                entry.status.error_message =
+                                    Some("Сканер прерван; результат не считается полным".into());
+                            }
+                            Ok(mut result) => {
+                                entry.status.processed_items = result.total_scanned_items;
+                                let mut execution_id = None;
+                                if result.complete {
+                                    if let Some(service) = execution {
+                                        match service.publish_preview(result.identities) {
+                                            Ok(preview) => execution_id = Some(preview.preview_id),
+                                            Err(e) => {
+                                                result.complete = false;
+                                                *result.diagnostics.entry(e.code).or_default() += 1;
+                                            }
+                                        }
+                                    }
+                                }
+                                entry.status.state = if result.fatal_error.is_some() {
+                                    TaskState::Failed
+                                } else if result.was_cancelled {
+                                    TaskState::Cancelled
+                                } else if !result.complete {
+                                    TaskState::Partial
+                                } else {
+                                    TaskState::Completed
+                                };
+                                entry.status.total_items = if result.complete {
+                                    Some(result.total_scanned_items)
+                                } else {
+                                    None
+                                };
+                                entry.status.error_message = result
+                                    .fatal_error
+                                    .map(|code| format!("Не удалось прочитать корень: {code}"));
+                                entry.preview = Some(StoredPreview {
+                                    preview_id: worker_id.clone(),
+                                    category_id: rule.id,
+                                    rule_version: rule.version,
+                                    scanned_time_utc: crate::scanner::system_time_to_iso(
+                                        std::time::SystemTime::now(),
+                                    ),
+                                    total_bytes: result.total_matched_bytes,
+                                    candidates: result.candidates,
+                                    complete: result.complete,
+                                    cancelled: result.was_cancelled,
+                                    diagnostics: result.diagnostics,
+                                    execution_preview_id: execution_id,
+                                    created: Instant::now(),
+                                });
+                            }
+                        }
+                    }
+                }
+            });
+        if spawned.is_err() {
+            let mut r = self.lock()?;
+            r.active = None;
+            if let Some(entry) = r.entries.get_mut(&id) {
+                entry.status.state = TaskState::Failed;
+                entry.status.error_message = Some("Не удалось запустить рабочий поток".into());
+            }
+            return Err(error("SCAN_WORKER", "Не удалось запустить сканирование"));
+        }
+        Ok(id)
     }
-
-    /// Запрашивает отмену выполняющейся задачи.
-    pub fn cancel_scan(&self, task_id: &str) -> bool {
-        let tokens = self.cancellation_tokens.lock().unwrap();
-        if let Some(token) = tokens.get(task_id) {
-            token.store(true, Ordering::Relaxed);
-            true
-        } else {
-            false
+    pub fn cancel_scan(&self, id: &str) -> Result<bool, ApiError> {
+        let r = self.lock()?;
+        if let Some(entry) = r.entries.get(id) {
+            if entry.status.state == TaskState::Running {
+                entry.cancel.store(true, Ordering::Release);
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+    pub fn cancel_all(&self) {
+        if let Ok(r) = self.registry.lock() {
+            for entry in r.entries.values() {
+                entry.cancel.store(true, Ordering::Release);
+            }
         }
     }
-
-    /// Возвращает текущий статус задачи.
-    pub fn get_task_status(&self, task_id: &str) -> Option<TaskStatus> {
-        let tasks = self.tasks.lock().unwrap();
-        tasks.get(task_id).cloned()
+    pub fn get_task_status(&self, id: &str) -> Result<Option<TaskStatus>, ApiError> {
+        Ok(self.lock()?.entries.get(id).map(|e| e.status.clone()))
     }
-
-    /// Возвращает страницу кандидатов preview для неблокирующей выдачи в UI.
     pub fn get_preview_page(
         &self,
-        preview_id: &str,
+        id: &str,
         offset: usize,
         limit: usize,
+        query: &str,
     ) -> Result<CleanupPreviewPage, ApiError> {
-        let previews = self.previews.lock().unwrap();
-        let stored = previews.get(preview_id).ok_or_else(|| ApiError {
-            code: "PREVIEW_NOT_FOUND".into(),
-            message: format!("Снимок предварительного просмотра не найден: {preview_id}"),
-        })?;
-
-        let total_candidates = stored.candidates.len();
-        let total_bytes = stored.total_bytes;
-
-        let items = if offset >= total_candidates {
-            Vec::new()
-        } else {
-            let end = (offset + limit).min(total_candidates);
-            stored.candidates[offset..end].to_vec()
-        };
-
+        if id.len() > 128 || !(1..=100).contains(&limit) || query.len() > 512 {
+            return Err(error("INVALID_PAGE", "Некорректные параметры preview"));
+        }
+        let r = self.lock()?;
+        let stored = r
+            .entries
+            .get(id)
+            .and_then(|e| e.preview.as_ref())
+            .ok_or_else(|| {
+                error(
+                    "PREVIEW_NOT_FOUND",
+                    "Снимок не найден или сканирование ещё выполняется",
+                )
+            })?;
+        if stored.created.elapsed() >= RETENTION {
+            return Err(error(
+                "PREVIEW_EXPIRED",
+                "Снимок устарел; выполните новый анализ",
+            ));
+        }
+        let query = query.trim().to_lowercase();
+        let filtered: Vec<_> = stored
+            .candidates
+            .iter()
+            .filter(|c| {
+                query.is_empty()
+                    || c.display_path.to_lowercase().contains(&query)
+                    || c.reason.to_lowercase().contains(&query)
+            })
+            .collect();
+        let count = filtered.len();
+        let items = filtered
+            .into_iter()
+            .skip(offset)
+            .take(limit)
+            .cloned()
+            .collect();
         Ok(CleanupPreviewPage {
             preview_id: stored.preview_id.clone(),
             category_id: stored.category_id.clone(),
             offset,
             limit,
-            total_candidates,
-            total_bytes,
+            total_candidates: count,
+            total_bytes: stored.total_bytes.to_string(),
             items,
+            rule_version: stored.rule_version.clone(),
+            complete: stored.complete,
+            cancelled: stored.cancelled,
+            diagnostics: stored.diagnostics.clone(),
+            execution_preview_id: stored.execution_preview_id.clone(),
+            unfiltered_candidates: stored.candidates.len(),
         })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_task_manager_flow() {
-        let manager = TaskManager::new();
-        let task_res = manager.start_scan("user-temp-v1");
-        assert!(task_res.is_ok());
-
-        let task_id = task_res.unwrap();
-        let status = manager.get_task_status(&task_id);
-        assert!(status.is_some());
-
-        // Проверка отмены
-        assert!(manager.cancel_scan(&task_id));
-    }
-
-    #[test]
-    fn test_invalid_category_rejected() {
-        let manager = TaskManager::new();
-        let res = manager.start_scan("invalid_unknown_category");
-        assert!(res.is_err());
+impl Drop for TaskManager {
+    fn drop(&mut self) {
+        self.cancel_all();
     }
 }
+#[cfg(test)]
+#[path = "scan_tests.rs"]
+mod tests;

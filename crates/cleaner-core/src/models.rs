@@ -122,6 +122,7 @@ pub enum TaskState {
     Pending,
     Running,
     Completed,
+    Partial,
     Cancelled,
     Failed,
 }
@@ -145,7 +146,8 @@ pub struct AppInfo {
     /// Строгий локальный режим без сетевых запросов.
     pub is_local_mode: bool,
     /// Запущено ли приложение с правами администратора (для MVP должно быть false).
-    pub is_admin: bool,
+    pub is_admin: Option<bool>,
+    pub settings_persistent: bool,
     /// Идентификатор выбранной темы оформления.
     pub theme: String,
 }
@@ -181,7 +183,7 @@ pub struct CleanupCandidate {
     /// Абсолютный путь к файлу на диске (для повторной проверки перед действием).
     pub absolute_path: String,
     /// Размер файла в байтах.
-    pub size_bytes: u64,
+    pub size_bytes: String,
     /// Идентификатор правила/категории очистки (например, "user-temp-v1").
     pub category_id: String,
     /// Причина включения файла в список кандидатов.
@@ -200,6 +202,12 @@ pub struct CleanupPreviewPage {
     pub offset: usize,
     pub limit: usize,
     pub total_candidates: usize,
-    pub total_bytes: u64,
+    pub unfiltered_candidates: usize,
+    pub total_bytes: String,
     pub items: Vec<CleanupCandidate>,
+    pub rule_version: String,
+    pub complete: bool,
+    pub cancelled: bool,
+    pub diagnostics: std::collections::BTreeMap<String, u64>,
+    pub execution_preview_id: Option<String>,
 }

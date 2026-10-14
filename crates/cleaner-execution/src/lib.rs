@@ -85,7 +85,7 @@ impl CleanupService {
             reason: if !persistent {
                 "Постоянный журнал недоступен. Исполнение заблокировано."
             } else if !self.action.available() {
-                "Безопасный Windows-адаптер Корзины ещё не допущен. Исполнение заблокировано."
+                "Отправка в Корзину пока недоступна: проверка безопасности исполнения не завершена."
             } else {
                 "Нужны preview завершённого сканирования и явное подтверждение."
             }
@@ -156,6 +156,14 @@ impl CleanupService {
             .values()
             .filter(|p| !p.consumed && p.preview.expires_at_ms > now_ms())
             .max_by_key(|p| p.preview.expires_at_ms)
+            .map(|p| p.preview.clone()))
+    }
+    pub fn preview(&self, id: &str) -> Result<Option<CleanupPreview>, ApiError> {
+        Ok(self
+            .lock()?
+            .previews
+            .get(id)
+            .filter(|p| !p.consumed && p.preview.expires_at_ms > now_ms())
             .map(|p| p.preview.clone()))
     }
     pub fn prepare_confirmation(

@@ -39,7 +39,7 @@ export async function fetchAppInfo(): Promise<AppInfo> {
   // Fallback для запуска в браузере (pnpm dev)
   return {
     name: "CleanCore (Web preview)",
-    version: "0.0.2",
+    version: "0.0.3",
     is_local_mode: true,
     is_admin: null,
     settings_persistent: false,

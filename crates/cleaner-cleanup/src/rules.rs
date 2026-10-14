@@ -24,7 +24,7 @@ pub struct CleanupRule {
 impl CleanupRule {
     /// Возвращает минимальный возраст файлов в виде Duration.
     pub fn min_age_duration(&self) -> Duration {
-        Duration::from_secs(self.min_age_days * 24 * 3600)
+        Duration::from_secs(self.min_age_days.saturating_mul(24 * 3600))
     }
 
     /// Встроенное правило первой категории: временные файлы текущего пользователя.

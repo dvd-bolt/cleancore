@@ -24,7 +24,7 @@ export const Footer: React.FC<FooterProps> = ({ appInfo }) => {
         <span className="flex items-center gap-1.5">
           <Monitor className="w-3.5 h-3.5" />
           <span>
-            {appInfo?.is_admin ? "Права: Администратор" : "Обычные права пользователя"}
+            {appInfo?.is_admin == null ? "Права: нет данных" : appInfo.is_admin ? "Права: Администратор" : "Обычные права пользователя"}
           </span>
         </span>
         <span className="flex items-center gap-1.5">
