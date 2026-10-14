@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-execution-preview"
+description = "Enables the get_execution_preview command without any pre-configured scope."
+commands.allow = ["get_execution_preview"]
+
+[[permission]]
+identifier = "deny-get-execution-preview"
+description = "Denies the get_execution_preview command without any pre-configured scope."
+commands.deny = ["get_execution_preview"]

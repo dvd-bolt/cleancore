@@ -36,6 +36,8 @@ impl From<StorageError> for ApiError {
 pub struct StorageManager {
     conn: Mutex<Connection>,
     db_path: PathBuf,
+    // Prevent another desktop process from recovering our live journal as a crash.
+    _audit_lock: Option<std::fs::File>,
 }
 
 impl StorageManager {
@@ -49,10 +51,12 @@ impl StorageManager {
             }
         }
 
+        let audit_lock = Self::acquire_audit_lock(&db_path)?;
         let conn = Connection::open(&db_path)?;
         let manager = Self {
             conn: Mutex::new(conn),
             db_path,
+            _audit_lock: audit_lock,
         };
         manager.init_schema()?;
         manager.init_audit()?;
@@ -65,6 +69,7 @@ impl StorageManager {
         let manager = Self {
             conn: Mutex::new(conn),
             db_path: PathBuf::from(":memory:"),
+            _audit_lock: None,
         };
         manager.init_schema()?;
         manager.init_audit()?;
@@ -180,6 +185,28 @@ impl StorageManager {
     /// Путь к файлу базы данных.
     pub fn db_path(&self) -> &Path {
         &self.db_path
+    }
+
+    fn acquire_audit_lock(path: &Path) -> Result<Option<std::fs::File>, StorageError> {
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            let mut name = path.as_os_str().to_owned();
+            name.push(".cleanup.lock");
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .share_mode(0)
+                .open(PathBuf::from(name))?;
+            Ok(Some(file))
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = path;
+            Ok(None)
+        }
     }
 }
 

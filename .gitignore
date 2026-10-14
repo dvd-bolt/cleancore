@@ -27,6 +27,11 @@ Desktop.ini
 *.sqlite-shm
 *.sqlite3-wal
 *.sqlite3-shm
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.cleanup.lock
 
 # Temporary outputs and downloaded models
 /tmp/

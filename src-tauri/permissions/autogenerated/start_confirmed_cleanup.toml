@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-start-confirmed-cleanup"
+description = "Enables the start_confirmed_cleanup command without any pre-configured scope."
+commands.allow = ["start_confirmed_cleanup"]
+
+[[permission]]
+identifier = "deny-start-confirmed-cleanup"
+description = "Denies the start_confirmed_cleanup command without any pre-configured scope."
+commands.deny = ["start_confirmed_cleanup"]

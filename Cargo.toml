@@ -5,6 +5,7 @@ members = [
     "crates/cleaner-system",
     "crates/cleaner-storage",
     "crates/cleaner-cleanup",
+    "crates/cleaner-execution",
     "src-tauri",
 ]
 

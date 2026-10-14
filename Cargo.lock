@@ -346,6 +346,7 @@ version = "0.0.3"
 dependencies = [
  "cleaner-cleanup",
  "cleaner-core",
+ "cleaner-execution",
  "cleaner-storage",
  "cleaner-system",
  "serde",
@@ -376,6 +377,15 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "tracing",
+]
+
+[[package]]
+name = "cleaner-execution"
+version = "0.0.2"
+dependencies = [
+ "cleaner-core",
+ "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

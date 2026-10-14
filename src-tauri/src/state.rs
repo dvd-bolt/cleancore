@@ -16,6 +16,7 @@ pub struct AppState {
     pub is_paused: AtomicBool,
     pub interval_ms: AtomicU64,
     pub settings_change: Mutex<()>,
+    pub cleanup: Arc<cleaner_execution::CleanupService>,
 }
 
 impl Default for AppState {
@@ -30,6 +31,10 @@ impl Default for AppState {
 
         let initial_settings = storage.load_app_settings().unwrap_or_default();
 
+        let cleanup = Arc::new(cleaner_execution::CleanupService::new(
+            storage.clone(),
+            Arc::new(cleaner_execution::native::DisabledRecycle),
+        ));
         Self {
             app_info: Mutex::new(AppInfo {
                 name: "CleanCore".to_string(),
@@ -44,6 +49,7 @@ impl Default for AppState {
             is_paused: AtomicBool::new(initial_settings.is_monitoring_paused),
             interval_ms: AtomicU64::new(initial_settings.refresh_interval_ms),
             settings_change: Mutex::new(()),
+            cleanup,
         }
     }
 }

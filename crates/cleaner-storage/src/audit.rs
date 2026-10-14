@@ -109,3 +109,7 @@ impl CleanupJournal for StorageManager {
             .transpose()
     }
 }
+
+#[cfg(test)]
+#[path = "audit_tests.rs"]
+mod tests;

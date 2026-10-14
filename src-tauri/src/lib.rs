@@ -1,3 +1,4 @@
+pub mod cleanup_commands;
 pub mod commands;
 pub mod state;
 
@@ -19,6 +20,13 @@ pub fn run() {
             commands::get_app_settings,
             commands::save_refresh_interval,
             commands::toggle_pause_metrics,
+            cleanup_commands::get_cleanup_availability,
+            cleanup_commands::get_execution_preview,
+            cleanup_commands::prepare_cleanup_confirmation,
+            cleanup_commands::start_confirmed_cleanup,
+            cleanup_commands::get_cleanup_operation,
+            cleanup_commands::cancel_cleanup,
+            cleanup_commands::get_cleanup_journal,
             commands::start_cleanup_scan,
             commands::get_scan_progress,
             commands::cancel_cleanup_scan,
