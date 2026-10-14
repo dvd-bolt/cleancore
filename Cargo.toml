@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "crates/cleaner-core",
+    "crates/cleaner-system",
+    "crates/cleaner-storage",
     "src-tauri",
 ]
 
@@ -17,3 +19,5 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
 tracing = "0.1"
+sysinfo = "0.33"
+rusqlite = { version = "0.32", features = ["bundled"] }

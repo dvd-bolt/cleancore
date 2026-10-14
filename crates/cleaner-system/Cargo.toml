@@ -1,0 +1,16 @@
+[package]
+name = "cleaner-system"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CleanCore System Collector and Metrics Adapter"
+
+[dependencies]
+cleaner-core = { path = "../cleaner-core" }
+sysinfo = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }

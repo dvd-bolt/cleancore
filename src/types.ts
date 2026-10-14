@@ -47,6 +47,17 @@ export interface ProcessItem {
   executable_path: FieldValue<string>;
 }
 
+export interface ProcessSnapshot {
+  timestamp_utc: string;
+  processes: ProcessItem[];
+}
+
+export interface AppSettings {
+  refresh_interval_ms: number;
+  theme: string;
+  is_monitoring_paused: boolean;
+}
+
 export interface AppInfo {
   name: string;
   version: string;

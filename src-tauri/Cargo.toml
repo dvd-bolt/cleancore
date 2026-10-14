@@ -17,6 +17,8 @@ tauri-build = { version = "2.0", features = [] }
 [dependencies]
 tauri = { version = "2.0", features = [] }
 cleaner-core = { path = "../crates/cleaner-core" }
+cleaner-system = { path = "../crates/cleaner-system" }
+cleaner-storage = { path = "../crates/cleaner-storage" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

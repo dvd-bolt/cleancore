@@ -1,13 +1,39 @@
 import React, { useState } from "react";
-import { AppInfo } from "../types";
-import { Sliders, Shield, Palette, Info } from "lucide-react";
+import { AppInfo, AppSettings } from "../types";
+import { Sliders, Shield, Palette, Info, Database, Check } from "lucide-react";
 
 interface SettingsPageProps {
   appInfo: AppInfo | null;
+  settings: AppSettings | null;
+  onUpdateInterval: (intervalMs: number) => Promise<void>;
 }
 
-export const SettingsPage: React.FC<SettingsPageProps> = ({ appInfo }) => {
-  const [intervalSec, setIntervalSec] = useState("2");
+export const SettingsPage: React.FC<SettingsPageProps> = ({
+  appInfo,
+  settings,
+  onUpdateInterval,
+}) => {
+  const [saving, setSaving] = useState(false);
+  const [savedSuccess, setSavedSuccess] = useState(false);
+
+  const currentIntervalSec = Math.round(
+    (settings?.refresh_interval_ms || 2000) / 1000
+  ).toString();
+
+  const handleIntervalChange = async (sec: "2" | "5" | "10") => {
+    setSaving(true);
+    setSavedSuccess(false);
+    try {
+      const ms = parseInt(sec, 10) * 1000;
+      await onUpdateInterval(ms);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
+    } catch (e) {
+      console.error("Ошибка сохранения интервала:", e);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -20,7 +46,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ appInfo }) => {
           В твоём ритме.
         </h2>
         <p className="text-xs text-muted mt-1">
-          Параметры опроса датчиков, отображение темы и гарантии приватности.
+          Параметры опроса датчиков, база данных настроек и гарантии приватности.
         </p>
       </div>
 
@@ -33,11 +59,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ appInfo }) => {
               <Sliders className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="font-heading text-sm font-semibold text-txt">
-                Интервал обновления показателей
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-heading text-sm font-semibold text-txt">
+                  Интервал обновления показателей
+                </h3>
+                {savedSuccess && (
+                  <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-mono">
+                    <Check className="w-3 h-3" /> Сохранено в SQLite
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-muted mt-0.5">
-                Частота опроса системных датчиков CPU, RAM и накопителей
+                Частота опроса системных датчиков CPU, RAM и накопителей (диски: 30 сек)
               </p>
             </div>
           </div>
@@ -46,12 +79,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ appInfo }) => {
             {(["2", "5", "10"] as const).map((sec) => (
               <button
                 key={sec}
-                onClick={() => setIntervalSec(sec)}
+                disabled={saving}
+                onClick={() => handleIntervalChange(sec)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-mono border transition-all ${
-                  intervalSec === sec
+                  currentIntervalSec === sec
                     ? "bg-accent text-accent-ink border-accent font-semibold"
                     : "bg-shell border-line text-muted hover:text-txt"
-                }`}
+                } disabled:opacity-50`}
               >
                 {sec} сек
               </button>
@@ -59,7 +93,28 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ appInfo }) => {
           </div>
         </div>
 
-        {/* Setting 2: Theme */}
+        {/* Setting 2: SQLite Storage */}
+        <div className="bg-surface border border-line rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-9 h-9 rounded-lg bg-shell border border-line flex items-center justify-center text-accent">
+              <Database className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="font-heading text-sm font-semibold text-txt">
+                Хранилище настроек (SQLite)
+              </h3>
+              <p className="text-xs text-muted mt-0.5">
+                Локальная база данных параметров приложения
+              </p>
+            </div>
+          </div>
+
+          <span className="font-mono text-xs px-3 py-1.5 rounded-lg bg-shell border border-line text-muted">
+            %LOCALAPPDATA%\CleanCore\cleancore.db
+          </span>
+        </div>
+
+        {/* Setting 3: Theme */}
         <div className="bg-surface border border-line rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
             <div className="w-9 h-9 rounded-lg bg-shell border border-line flex items-center justify-center text-accent">
@@ -81,7 +136,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ appInfo }) => {
           </span>
         </div>
 
-        {/* Setting 3: Privacy */}
+        {/* Setting 4: Privacy */}
         <div className="bg-surface border border-line rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
             <div className="w-9 h-9 rounded-lg bg-shell border border-line flex items-center justify-center text-accent">
@@ -92,7 +147,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ appInfo }) => {
                 Приватность и сеть
               </h3>
               <p className="text-xs text-muted mt-0.5">
-                Автономный режим: сетевые запросы и сбор аналитики отключены
+                Автономный режим: телеметрия, аналитика и внешние запросы отсутствуют
               </p>
             </div>
           </div>
@@ -102,7 +157,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ appInfo }) => {
           </span>
         </div>
 
-        {/* Setting 4: About */}
+        {/* Setting 5: About */}
         <div className="bg-surface border border-line rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
             <div className="w-9 h-9 rounded-lg bg-shell border border-line flex items-center justify-center text-dim">
@@ -110,16 +165,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ appInfo }) => {
             </div>
             <div>
               <h3 className="font-heading text-sm font-semibold text-txt">
-                О программе
+                О программе CleanCore
               </h3>
               <p className="text-xs text-muted mt-0.5">
-                CleanCore · Rust stable · Tauri 2 · React TypeScript
+                Rust stable · Tauri 2 · React 19 TypeScript · Vite
               </p>
             </div>
           </div>
 
           <span className="font-mono text-xs text-dim">
-            Версия {appInfo?.version || "0.0.1"} (Этап 1)
+            Версия {appInfo?.version || "0.0.2"} (Этап 2)
           </span>
         </div>
       </div>

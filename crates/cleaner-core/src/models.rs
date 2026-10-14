@@ -149,3 +149,24 @@ pub struct AppInfo {
     /// Идентификатор выбранной темы оформления.
     pub theme: String,
 }
+
+/// Пользовательские настройки приложения CleanCore.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppSettings {
+    /// Интервал фонового опроса метрик в миллисекундах (по умолчанию 2000 мс).
+    pub refresh_interval_ms: u64,
+    /// Идентификатор цветовой темы оформления.
+    pub theme: String,
+    /// Состояние ручной паузы мониторинга.
+    pub is_monitoring_paused: bool,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            refresh_interval_ms: 2000,
+            theme: "studio-pearl".to_string(),
+            is_monitoring_paused: false,
+        }
+    }
+}

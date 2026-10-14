@@ -1,5 +1,5 @@
 import React from "react";
-import { MetricSnapshot, ActivePage } from "../types";
+import { MetricSnapshot, ProcessItem, ActivePage } from "../types";
 import { MetricCard } from "../components/MetricCard";
 import { ActivityChart } from "../components/ActivityChart";
 import { CleanupCard } from "../components/CleanupCard";
@@ -8,10 +8,27 @@ import { Cpu, HardDrive, MemoryStick, Network, Wifi } from "lucide-react";
 
 interface OverviewPageProps {
   metrics: MetricSnapshot | null;
+  history: MetricSnapshot[];
+  processes: ProcessItem[];
   onNavigate: (page: ActivePage) => void;
 }
 
-export const OverviewPage: React.FC<OverviewPageProps> = ({ metrics, onNavigate }) => {
+export const OverviewPage: React.FC<OverviewPageProps> = ({
+  metrics,
+  history,
+  processes,
+  onNavigate,
+}) => {
+  const rxKb =
+    metrics?.network.status === "Available" && metrics.network.value
+      ? (metrics.network.value.rx_bytes_per_sec / 1024).toFixed(1)
+      : null;
+
+  const txKb =
+    metrics?.network.status === "Available" && metrics.network.value
+      ? (metrics.network.value.tx_bytes_per_sec / 1024).toFixed(1)
+      : null;
+
   return (
     <div className="space-y-6">
       {/* Page Heading */}
@@ -49,7 +66,15 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ metrics, onNavigate 
               : "—"
           }
           unit="%"
-          subText={metrics?.cpu.value ? `${metrics.cpu.value.core_count} ядер` : undefined}
+          subText={
+            metrics?.cpu.value
+              ? `${metrics.cpu.value.core_count} ядер ${
+                  metrics.cpu.value.frequency_mhz
+                    ? `· ${metrics.cpu.value.frequency_mhz} МГц`
+                    : ""
+                }`
+              : undefined
+          }
           progressPercent={metrics?.cpu.value?.total_usage_percent}
         />
 
@@ -83,7 +108,14 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ metrics, onNavigate 
               : "—"
           }
           unit="ГБ"
-          subText={metrics?.disk.value ? `Диск ${metrics.disk.value.mount_point}` : undefined}
+          subText={
+            metrics?.disk.value
+              ? `Диск ${metrics.disk.value.mount_point} (всего ${(
+                  metrics.disk.value.total_bytes /
+                  (1024 * 1024 * 1024)
+                ).toFixed(0)} ГБ)`
+              : undefined
+          }
           progressPercent={metrics?.disk.value?.usage_percent}
         />
 
@@ -92,20 +124,20 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ metrics, onNavigate 
           tag="NET"
           icon={<Network className="w-4 h-4" />}
           field={metrics?.network || { status: "NotMeasured" }}
-          formattedValue={
-            metrics?.network.value?.rx_bytes_per_sec !== undefined
-              ? (metrics.network.value.rx_bytes_per_sec / 1024).toFixed(0)
-              : "—"
-          }
+          formattedValue={rxKb !== null ? rxKb : "—"}
           unit="КБ/с"
-          subText={metrics?.network.value?.interface_name || undefined}
+          subText={
+            metrics?.network.value?.interface_name
+              ? `Адаптер: ${metrics.network.value.interface_name}`
+              : undefined
+          }
         />
       </div>
 
-      {/* Main Grid: Chart + Cleanup Action */}
+      {/* Main Grid: Live Chart + Cleanup Action */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <ActivityChart />
+          <ActivityChart history={history} />
         </div>
         <div>
           <CleanupCard onOpenCleanup={() => onNavigate("cleanup")} />
@@ -115,7 +147,10 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ metrics, onNavigate 
       {/* Bottom Grid: Process Preview + Network details */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <ProcessMiniTable onOpenProcesses={() => onNavigate("processes")} />
+          <ProcessMiniTable
+            processes={processes}
+            onOpenProcesses={() => onNavigate("processes")}
+          />
         </div>
 
         <article className="bg-surface border border-line rounded-xl p-5 flex flex-col justify-between">
@@ -125,7 +160,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ metrics, onNavigate 
                 Адаптеры
               </span>
               <h3 className="font-heading text-base font-semibold text-txt">
-                Сеть
+                Сетевой трафик
               </h3>
             </div>
             <Wifi className="w-4 h-4 text-accent" />
@@ -133,17 +168,21 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ metrics, onNavigate 
 
           <div className="space-y-3 my-2 font-mono text-xs">
             <div className="flex items-center justify-between p-2.5 rounded-lg bg-shell border border-line">
-              <span className="text-muted">↓ Приём</span>
-              <strong className="text-txt">— КБ/с</strong>
+              <span className="text-muted">↓ Приём (скорость)</span>
+              <strong className="text-txt">
+                {rxKb !== null ? `${rxKb} КБ/с` : "Ожидание"}
+              </strong>
             </div>
             <div className="flex items-center justify-between p-2.5 rounded-lg bg-shell border border-line">
-              <span className="text-muted">↑ Передача</span>
-              <strong className="text-txt">— КБ/с</strong>
+              <span className="text-muted">↑ Передача (скорость)</span>
+              <strong className="text-txt">
+                {txKb !== null ? `${txKb} КБ/с` : "Ожидание"}
+              </strong>
             </div>
           </div>
 
-          <p className="text-[11px] text-dim text-center mt-2">
-            Счётчики сетевых интерфейсов подключаются на этапе 2
+          <p className="text-[11px] text-dim text-center mt-2 font-mono">
+            {metrics?.network.value?.interface_name || "Все сетевые интерфейсы"}
           </p>
         </article>
       </div>

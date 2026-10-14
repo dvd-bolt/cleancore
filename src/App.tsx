@@ -1,6 +1,14 @@
 import { useState, useEffect } from "react";
-import { ActivePage, AppInfo, MetricSnapshot } from "./types";
-import { fetchAppInfo, fetchInitialMetrics } from "./lib/ipc";
+import { ActivePage, AppInfo, AppSettings, MetricSnapshot, ProcessItem } from "./types";
+import {
+  fetchAppInfo,
+  fetchAppSettings,
+  fetchMetricSnapshot,
+  fetchProcessList,
+  saveRefreshInterval,
+  togglePauseMetrics,
+  subscribeToMetrics,
+} from "./lib/ipc";
 import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
 import { OverviewPage } from "./pages/OverviewPage";
@@ -14,22 +22,33 @@ export function App() {
   const [activePage, setActivePage] = useState<ActivePage>("overview");
   const [isPaused, setIsPaused] = useState(false);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
   const [metrics, setMetrics] = useState<MetricSnapshot | null>(null);
+  const [metricsHistory, setMetricsHistory] = useState<MetricSnapshot[]>([]);
+  const [processes, setProcesses] = useState<ProcessItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Инициализация данных при старте
   useEffect(() => {
     let mounted = true;
 
     async function initialize() {
       try {
-        const [info, initMetrics] = await Promise.all([
+        const [info, appSet, initMetrics, procSnapshot] = await Promise.all([
           fetchAppInfo(),
-          fetchInitialMetrics(),
+          fetchAppSettings(),
+          fetchMetricSnapshot(),
+          fetchProcessList(),
         ]);
+
         if (mounted) {
           setAppInfo(info);
+          setSettings(appSet);
+          setIsPaused(appSet.is_monitoring_paused);
           setMetrics(initMetrics);
+          setMetricsHistory([initMetrics]);
+          setProcesses(procSnapshot.processes);
           setLoading(false);
         }
       } catch (err) {
@@ -47,12 +66,71 @@ export function App() {
     };
   }, []);
 
+  // Подписка на фоновые события обновления метрик от бэкенда Tauri
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+
+    async function subscribe() {
+      unsubscribe = await subscribeToMetrics((snapshot) => {
+        setMetrics(snapshot);
+        setMetricsHistory((prev) => {
+          const next = [...prev, snapshot];
+          return next.slice(-30); // хранить последние 30 точек
+        });
+      });
+    }
+
+    subscribe();
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, []);
+
+  // Периодическое фоновое обновление процессов для mini-table (раз в 10 секунд, если не на паузе)
+  useEffect(() => {
+    if (isPaused) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const snapshot = await fetchProcessList();
+        setProcesses(snapshot.processes);
+      } catch (e) {
+        console.warn("Фоновое обновление процессов:", e);
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [isPaused]);
+
+  // Переключение паузы
+  const handleTogglePause = async () => {
+    const nextPaused = !isPaused;
+    setIsPaused(nextPaused);
+    try {
+      await togglePauseMetrics(nextPaused);
+      if (settings) {
+        setSettings({ ...settings, is_monitoring_paused: nextPaused });
+      }
+    } catch (e) {
+      console.error("Ошибка переключения паузы:", e);
+    }
+  };
+
+  // Сохранение нового интервала опроса
+  const handleUpdateInterval = async (intervalMs: number) => {
+    const updated = await saveRefreshInterval(intervalMs);
+    setSettings(updated);
+  };
+
   const renderContent = () => {
     if (loading) {
       return (
         <div className="h-full flex flex-col items-center justify-center p-8 text-center text-muted">
           <div className="w-8 h-8 border-2 border-line border-t-accent rounded-full animate-spin mb-3" />
-          <span className="text-xs font-mono">Инициализация CleanCore...</span>
+          <span className="text-xs font-mono">Инициализация CleanCore v0.0.2...</span>
         </div>
       );
     }
@@ -81,7 +159,14 @@ export function App() {
 
     switch (activePage) {
       case "overview":
-        return <OverviewPage metrics={metrics} onNavigate={setActivePage} />;
+        return (
+          <OverviewPage
+            metrics={metrics}
+            history={metricsHistory}
+            processes={processes}
+            onNavigate={setActivePage}
+          />
+        );
       case "processes":
         return <ProcessesPage />;
       case "cleanup":
@@ -89,7 +174,13 @@ export function App() {
       case "journal":
         return <JournalPage />;
       case "settings":
-        return <SettingsPage appInfo={appInfo} />;
+        return (
+          <SettingsPage
+            appInfo={appInfo}
+            settings={settings}
+            onUpdateInterval={handleUpdateInterval}
+          />
+        );
       default:
         return null;
     }
@@ -102,14 +193,12 @@ export function App() {
         activePage={activePage}
         onPageChange={setActivePage}
         isPaused={isPaused}
-        onTogglePause={() => setIsPaused(!isPaused)}
+        onTogglePause={handleTogglePause}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto px-8 py-6">
-        <div className="max-w-7xl mx-auto">
-          {renderContent()}
-        </div>
+        <div className="max-w-7xl mx-auto">{renderContent()}</div>
       </main>
 
       {/* Bottom Status Footer */}
