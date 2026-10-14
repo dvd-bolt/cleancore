@@ -19,6 +19,15 @@ fn main() {
             "get_scan_progress",
             "cancel_cleanup_scan",
             "get_cleanup_preview",
+            "get_quick_directories",
+            "start_disk_analysis",
+            "get_disk_analysis_progress",
+            "get_disk_analysis_report",
+            "start_duplicate_scan",
+            "get_duplicate_scan_progress",
+            "get_duplicate_report",
+            "cancel_disk_task",
+            "get_resource_history",
         ]),
     ))
     .expect("failed to build CleanCore permissions");

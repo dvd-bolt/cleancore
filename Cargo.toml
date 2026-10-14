@@ -6,6 +6,7 @@ members = [
     "crates/cleaner-storage",
     "crates/cleaner-cleanup",
     "crates/cleaner-execution",
+    "crates/cleaner-disk",
     "src-tauri",
 ]
 
@@ -23,3 +24,4 @@ thiserror = "2.0"
 tracing = "0.1"
 sysinfo = "0.33"
 rusqlite = { version = "0.32", features = ["bundled"] }
+sha2 = "0.10"

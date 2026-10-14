@@ -14,6 +14,7 @@ import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
 import { OverviewPage } from "./pages/OverviewPage";
 import { ProcessesPage } from "./pages/ProcessesPage";
+import { DiskPage } from "./pages/DiskPage";
 import { CleanupPage } from "./pages/CleanupPage";
 import { JournalPage } from "./pages/JournalPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -199,6 +200,8 @@ export function App() {
             onRefresh={handleRefreshProcesses}
           />
         );
+      case "disk":
+        return <DiskPage />;
       case "cleanup":
         return <CleanupPage />;
       case "journal":
@@ -230,6 +233,7 @@ export function App() {
       <main className="flex-1 overflow-y-auto px-8 py-6">
         <div className="max-w-7xl mx-auto">
           {!isTauriEnvironment() && <p role="status" className="text-xs text-muted mb-4">Предпросмотр интерфейса в браузере: системный backend и SQLite не подключены.</p>}
+          {appInfo && isTauriEnvironment() && !appInfo.settings_persistent && <p role="alert" className="text-sm text-warn mb-4">Постоянная SQLite недоступна: настройки действуют только в памяти, исполнение очистки заблокировано.</p>}
           {renderContent()}
         </div>
       </main>

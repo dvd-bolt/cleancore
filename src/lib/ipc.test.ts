@@ -14,6 +14,8 @@ import {
   getScanProgress,
   cancelCleanupScan,
   getCleanupPreview,
+  fetchQuickDirectories,
+  fetchResourceHistory,
 } from "./ipc";
 
 describe("IPC Bridge & Fallback behavior", () => {
@@ -30,7 +32,8 @@ describe("IPC Bridge & Fallback behavior", () => {
     const info = await fetchAppInfo();
     expect(info.name).toContain("CleanCore");
     expect(info.is_local_mode).toBe(true);
-    expect(info.is_admin).toBe(false);
+    expect(info.is_admin).toBeNull();
+    expect(info.settings_persistent).toBe(false);
     expect(info.theme).toBe("studio-pearl");
   });
 
@@ -68,21 +71,21 @@ describe("IPC Bridge & Fallback behavior", () => {
     expect(typeof pong).toBe("string");
   });
 
-  it("handles cleanup scanner IPC flow safely in preview mode", async () => {
-    const taskId = await startCleanupScan("user-temp-v1");
-    expect(typeof taskId).toBe("string");
+  it("does not invent scanner tasks or file lists in browser preview", async () => {
+    await expect(startCleanupScan()).rejects.toThrow("desktop");
+    await expect(getScanProgress("unknown")).rejects.toThrow("desktop");
+    await expect(cancelCleanupScan("unknown")).rejects.toThrow("desktop");
+    await expect(getCleanupPreview("unknown")).rejects.toThrow("desktop");
+  });
 
-    const progress = await getScanProgress(taskId);
-    expect(progress.id).toBe(taskId);
-    expect(progress.state).toBe("Completed");
+  it("fetches quick directories and resource history safely in browser preview", async () => {
+    const dirs = await fetchQuickDirectories();
+    expect(Array.isArray(dirs)).toBe(true);
+    expect(dirs.length).toBeGreaterThan(0);
+    expect(dirs[0]).toHaveProperty("path");
 
-    const cancelled = await cancelCleanupScan(taskId);
-    expect(cancelled).toBe(true);
-
-    const preview = await getCleanupPreview(taskId, 0, 10);
-    expect(preview.preview_id).toBe(taskId);
-    expect(preview.items.length).toBeGreaterThan(0);
-    expect(preview.items[0].display_path).toBeDefined();
-    expect(preview.items[0].risk_level).toBe("Low");
+    const history = await fetchResourceHistory();
+    expect(Array.isArray(history.cpu_percentages)).toBe(true);
+    expect(history.cpu_percentages.length).toBeGreaterThan(0);
   });
 });

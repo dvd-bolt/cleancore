@@ -1,8 +1,13 @@
 pub mod cleanup_commands;
 pub mod commands;
+pub mod disk_commands;
 pub mod state;
 
+#[cfg(test)]
+mod ipc_tests;
+
 use state::AppState;
+use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
 use tauri::{Emitter, Manager};
@@ -31,6 +36,15 @@ pub fn run() {
             commands::get_scan_progress,
             commands::cancel_cleanup_scan,
             commands::get_cleanup_preview,
+            disk_commands::get_quick_directories,
+            disk_commands::start_disk_analysis,
+            disk_commands::get_disk_analysis_progress,
+            disk_commands::get_disk_analysis_report,
+            disk_commands::start_duplicate_scan,
+            disk_commands::get_duplicate_scan_progress,
+            disk_commands::get_duplicate_report,
+            disk_commands::cancel_disk_task,
+            disk_commands::get_resource_history,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
@@ -42,6 +56,10 @@ pub fn run() {
                 loop {
                     let interval_ms = state.interval_ms().max(500);
                     thread::sleep(Duration::from_millis(interval_ms));
+
+                    if state.shutdown.load(Ordering::Acquire) {
+                        break;
+                    }
 
                     // Если мониторинг на паузе — пропускаем такт
                     if state.is_paused() {
@@ -55,6 +73,8 @@ pub fn run() {
                         let snapshot = collector.collect_snapshot(interval_ms);
                         drop(collector);
 
+                        state.disk_manager.history.record_snapshot(&snapshot);
+
                         if let Err(e) = app_handle.emit("metrics-update", &snapshot) {
                             error!("Ошибка отправки события metrics-update: {e}");
                         }
@@ -64,6 +84,16 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running CleanCore tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building CleanCore tauri application")
+        .run(|app, event| {
+            if matches!(
+                event,
+                tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
+            ) {
+                let state = app.state::<AppState>();
+                state.shutdown.store(true, Ordering::Release);
+                state.task_manager.cancel_all();
+            }
+        });
 }

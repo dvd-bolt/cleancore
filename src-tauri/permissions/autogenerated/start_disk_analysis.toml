@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-start-disk-analysis"
+description = "Enables the start_disk_analysis command without any pre-configured scope."
+commands.allow = ["start_disk_analysis"]
+
+[[permission]]
+identifier = "deny-start-disk-analysis"
+description = "Denies the start_disk_analysis command without any pre-configured scope."
+commands.deny = ["start_disk_analysis"]

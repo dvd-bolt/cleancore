@@ -62,7 +62,8 @@ export interface AppInfo {
   name: string;
   version: string;
   is_local_mode: boolean;
-  is_admin: boolean;
+  is_admin: boolean | null;
+  settings_persistent: boolean;
   theme: string;
 }
 
@@ -71,7 +72,7 @@ export interface ApiError {
   message: string;
 }
 
-export type TaskState = "Pending" | "Running" | "Completed" | "Cancelled" | "Failed";
+export type TaskState = "Pending" | "Running" | "Completed" | "Partial" | "Cancelled" | "Failed";
 
 export interface TaskStatus {
   id: string;
@@ -88,7 +89,7 @@ export interface CleanupCandidate {
   obj_id: string;
   display_path: string;
   absolute_path: string;
-  size_bytes: number;
+  size_bytes: string;
   category_id: string;
   reason: string;
   modified_time_utc: string;
@@ -101,8 +102,100 @@ export interface CleanupPreviewPage {
   offset: number;
   limit: number;
   total_candidates: number;
-  total_bytes: number;
+  total_bytes: string;
   items: CleanupCandidate[];
+  unfiltered_candidates: number;
+  rule_version: string;
+  complete: boolean;
+  cancelled: boolean;
+  diagnostics: Record<string, number>;
+  execution_preview_id: string | null;
 }
 
-export type ActivePage = "overview" | "processes" | "cleanup" | "journal" | "settings";
+export type ActivePage = "overview" | "processes" | "disk" | "cleanup" | "journal" | "settings";
+
+export type FileCategory =
+  | "Videos"
+  | "Images"
+  | "Documents"
+  | "Archives"
+  | "Audio"
+  | "Code"
+  | "Other";
+
+export interface DiskEntry {
+  path: string;
+  name: string;
+  size_bytes: number;
+  is_dir: boolean;
+  file_count: number;
+  percentage: number;
+  category: FileCategory;
+}
+
+export interface CategorySummary {
+  category: FileCategory;
+  display_name: string;
+  total_bytes: number;
+  file_count: number;
+  percentage: number;
+}
+
+export interface DiskAnalysisReport {
+  root_path: string;
+  total_bytes: number;
+  total_files: number;
+  total_dirs: number;
+  categories: CategorySummary[];
+  largest_files: DiskEntry[];
+  largest_dirs: DiskEntry[];
+  subdirs: DiskEntry[];
+}
+
+export interface DuplicateFileEntry {
+  path: string;
+  modified_utc: string;
+  size_bytes: number;
+}
+
+export interface DuplicateGroup {
+  group_id: string;
+  file_size_bytes: number;
+  full_hash: string;
+  files: DuplicateFileEntry[];
+  reclaimable_bytes: number;
+}
+
+export interface DuplicateScanResult {
+  root_path: string;
+  groups: DuplicateGroup[];
+  total_wasted_bytes: number;
+  total_duplicate_files: number;
+}
+
+export interface QuickDirectory {
+  id: string;
+  name: string;
+  path: string;
+}
+
+export interface ResourceHistory {
+  timestamps_utc: string[];
+  cpu_percentages: number[];
+  memory_percentages: number[];
+  network_rx_bytes_sec: number[];
+  network_tx_bytes_sec: number[];
+}
+
+export type DiskTaskState = "Running" | "Completed" | "Cancelled" | "Failed";
+
+export interface DiskTaskStatus {
+  task_id: string;
+  kind: string;
+  state: DiskTaskState;
+  progress_message: string;
+  scanned_items: number;
+  scanned_bytes: number;
+  error_message?: string | null;
+}
+

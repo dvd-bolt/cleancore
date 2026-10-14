@@ -3,6 +3,7 @@ import { ActivePage } from "../types";
 import { 
   LayoutDashboard, 
   Cpu, 
+  HardDrive,
   Trash2, 
   ScrollText, 
   Settings, 
@@ -27,9 +28,10 @@ export const Header: React.FC<HeaderProps> = ({
   const navItems: { id: ActivePage; label: string; num: string; icon: React.ReactNode }[] = [
     { id: "overview", label: "Обзор", num: "01", icon: <LayoutDashboard className="w-4 h-4" /> },
     { id: "processes", label: "Процессы", num: "02", icon: <Cpu className="w-4 h-4" /> },
-    { id: "cleanup", label: "Очистка", num: "03", icon: <Trash2 className="w-4 h-4" /> },
-    { id: "journal", label: "Журнал", num: "04", icon: <ScrollText className="w-4 h-4" /> },
-    { id: "settings", label: "Настройки", num: "05", icon: <Settings className="w-4 h-4" /> },
+    { id: "disk", label: "Диск", num: "03", icon: <HardDrive className="w-4 h-4" /> },
+    { id: "cleanup", label: "Очистка", num: "04", icon: <Trash2 className="w-4 h-4" /> },
+    { id: "journal", label: "Журнал", num: "05", icon: <ScrollText className="w-4 h-4" /> },
+    { id: "settings", label: "Настройки", num: "06", icon: <Settings className="w-4 h-4" /> },
   ];
 
   return (

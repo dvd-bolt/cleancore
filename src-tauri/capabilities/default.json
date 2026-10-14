@@ -23,6 +23,15 @@
     "allow-start-cleanup-scan",
     "allow-get-scan-progress",
     "allow-cancel-cleanup-scan",
-    "allow-get-cleanup-preview"
+    "allow-get-cleanup-preview",
+    "allow-get-quick-directories",
+    "allow-start-disk-analysis",
+    "allow-get-disk-analysis-progress",
+    "allow-get-disk-analysis-report",
+    "allow-start-duplicate-scan",
+    "allow-get-duplicate-scan-progress",
+    "allow-get-duplicate-report",
+    "allow-cancel-disk-task",
+    "allow-get-resource-history"
   ]
 }

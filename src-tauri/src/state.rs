@@ -1,7 +1,9 @@
 //! Управление состоянием настольного приложения CleanCore.
 
 use cleaner_cleanup::tasks::TaskManager;
+use cleaner_core::cleanup::CleanupJournal;
 use cleaner_core::models::AppInfo;
+use cleaner_disk::tasks::DiskManager;
 use cleaner_storage::StorageManager;
 use cleaner_system::collector::SystemCollector;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -13,10 +15,12 @@ pub struct AppState {
     pub collector: Mutex<SystemCollector>,
     pub storage: Arc<StorageManager>,
     pub task_manager: Arc<TaskManager>,
+    pub disk_manager: Arc<DiskManager>,
     pub is_paused: AtomicBool,
     pub interval_ms: AtomicU64,
     pub settings_change: Mutex<()>,
     pub cleanup: Arc<cleaner_execution::CleanupService>,
+    pub shutdown: AtomicBool,
 }
 
 impl Default for AppState {
@@ -40,16 +44,19 @@ impl Default for AppState {
                 name: "CleanCore".to_string(),
                 version: "0.0.3".to_string(),
                 is_local_mode: true,
-                is_admin: false,
+                is_admin: cleaner_system::privileges::is_elevated(),
+                settings_persistent: storage.is_persistent(),
                 theme: initial_settings.theme,
             }),
             collector: Mutex::new(SystemCollector::new()),
             storage,
-            task_manager: Arc::new(TaskManager::new()),
+            task_manager: Arc::new(TaskManager::with_execution(cleanup.clone())),
+            disk_manager: Arc::new(DiskManager::new()),
             is_paused: AtomicBool::new(initial_settings.is_monitoring_paused),
             interval_ms: AtomicU64::new(initial_settings.refresh_interval_ms),
             settings_change: Mutex::new(()),
             cleanup,
+            shutdown: AtomicBool::new(false),
         }
     }
 }

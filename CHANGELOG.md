@@ -12,6 +12,27 @@
 
 ## Unreleased
 
+### 2026-10-14 — v0.2.0 (Этап 5: Анализ диска и дубликатов)
+
+- Создан крейт `cleaner-disk`:
+  - Модуль 5.1: Отменяемый потоковый обход файловой системы `analyze_directory_tree` с поддержкой `AtomicBool`, пропуском reparse points/junctions/symlinks и безопасной обработкой ошибок доступа.
+  - Модуль 5.2: Определение размеров и сортировка крупнейших потребителей дискового пространства (`largest_files`, `largest_dirs`) с вычислением процентной доли от каталога.
+  - Модуль 5.3: Категоризация по 7 классам (`Videos`, `Images`, `Documents`, `Archives`, `Audio`, `Code`, `Other`) и построение карты распределения.
+  - Модуль 5.4: Трёхфазный алгоритм поиска дубликатов (Czkawka 3-phase logic: размер -> prehash 16 КБ -> полный SHA-256). Детектирование Windows Hard links через `GetFileInformationByHandle` с исключением из дубликатов. Защита от TOCTOU. Режим инспекции (автоудаление отключено).
+  - Модуль 5.5: Потокобезопасный кольцевой буфер `ResourceHistoryTracker` на 600 замеров (10 минут) в оперативной памяти бэкенда для отслеживания динамики нагрузки CPU, RAM и Network.
+  - Модуль 5.6: Менеджер фоновых задач `DiskManager` с генерацией `task_id`, опрос статуса через IPC без блокировки пользовательского интерфейса, выбор стандартных папок Windows (`QuickDirectory`).
+- Десктопная оболочка Tauri 2 (`src-tauri`):
+  - Модуль `disk_commands.rs`: IPC-команды `get_quick_directories`, `start_disk_analysis`, `get_disk_analysis_progress`, `get_disk_analysis_report`, `start_duplicate_scan`, `get_duplicate_scan_progress`, `get_duplicate_report`, `cancel_disk_task`, `get_resource_history`.
+  - Регистрация разрешений в `build.rs` и `capabilities/default.json`.
+  - Фоновый цикл сбора метрик передаёт замеры в `history.record_snapshot`.
+- React-интерфейс (`src/pages/DiskPage.tsx`):
+  - Полноценная страница в тёмном стиле Studio Pearl с тремя режимами: «Карта и объекты», «Поиск дубликатов», «История (10 мин)».
+  - Адаптивная полоса спектра распределения по категориям файлов и сетка легенды.
+  - Списки крупнейших файлов и папок с полными путями и процентной долей.
+  - Список групп доказанных дубликатов с подсчётом перерасхода места, полными хешами SHA-256 и путями к файлам.
+  - Интерактивные SVG-графики трендов CPU, RAM и сети за 10 минут с расчётом минимума, среднего и максимума.
+- Внедрён протокол изолированной параллельной разработки `isolated-development` (`.agents/skills/isolated-development/SKILL.md` и правило 12 в `AGENTS.md`).
+
 ### 2026-10-14 — v0.0.3 (Этап 3: Анализатор очистки)
 
 - Создан крейт `cleaner-cleanup`:
