@@ -4,6 +4,18 @@
   "description": "CleanCore default window capabilities without elevation or arbitrary shell execution",
   "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-get-app-info",
+    "allow-ping",
+    "allow-get-metric-snapshot",
+    "allow-get-process-list",
+    "allow-get-app-settings",
+    "allow-save-refresh-interval",
+    "allow-toggle-pause-metrics",
+    "allow-start-cleanup-scan",
+    "allow-get-scan-progress",
+    "allow-cancel-cleanup-scan",
+    "allow-get-cleanup-preview"
   ]
 }

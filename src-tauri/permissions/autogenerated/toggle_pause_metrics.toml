@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-toggle-pause-metrics"
+description = "Enables the toggle_pause_metrics command without any pre-configured scope."
+commands.allow = ["toggle_pause_metrics"]
+
+[[permission]]
+identifier = "deny-toggle-pause-metrics"
+description = "Denies the toggle_pause_metrics command without any pre-configured scope."
+commands.deny = ["toggle_pause_metrics"]

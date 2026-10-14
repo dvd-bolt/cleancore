@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { MetricSnapshot } from "../types";
 import { Activity } from "lucide-react";
+import { buildChartData } from "../lib/chart";
 
 interface ActivityChartProps {
   history: MetricSnapshot[];
@@ -9,60 +10,21 @@ interface ActivityChartProps {
 export const ActivityChart: React.FC<ActivityChartProps> = ({ history }) => {
   const [activeMetric, setActiveMetric] = useState<"CPU" | "RAM" | "Сеть">("CPU");
 
-  // Извлечение числовых значений для выбранной метрики
-  const points: number[] = history.map((snapshot) => {
-    switch (activeMetric) {
-      case "CPU":
-        return snapshot.cpu.status === "Available" && snapshot.cpu.value
-          ? snapshot.cpu.value.total_usage_percent
-          : 0;
-      case "RAM":
-        return snapshot.memory.status === "Available" && snapshot.memory.value
-          ? snapshot.memory.value.usage_percent
-          : 0;
-      case "Сеть":
-        return snapshot.network.status === "Available" && snapshot.network.value
-          ? snapshot.network.value.rx_bytes_per_sec / 1024 // в КБ/с
-          : 0;
-    }
-  });
-
-  const hasRealData = history.some((s) => {
-    if (activeMetric === "CPU") return s.cpu.status === "Available";
-    if (activeMetric === "RAM") return s.memory.status === "Available";
-    if (activeMetric === "Сеть") return s.network.status === "Available";
-    return false;
-  });
-
-  const latestValue = points.length > 0 ? points[points.length - 1] : 0;
-  const maxValue = activeMetric === "Сеть" ? Math.max(...points, 50) : 100;
-  const formattedLatest =
-    activeMetric === "Сеть"
-      ? `${latestValue.toFixed(0)} КБ/с`
-      : `${latestValue.toFixed(1)}%`;
-
-  // Построение SVG пути
+  const data = buildChartData(history, activeMetric);
+  const points = data.points;
+  const hasRealData = points.some((point) => point.value !== null);
+  const latestValue = data.latest;
+  const maxValue = data.max;
+  const formattedLatest = latestValue === null ? "нет данных" : activeMetric === "Сеть" ? `${latestValue.toFixed(0)} КБ/с` : `${latestValue.toFixed(1)}%`;
   const width = 500;
   const height = 140;
   const paddingX = 10;
   const paddingY = 10;
   const chartW = width - paddingX * 2;
   const chartH = height - paddingY * 2;
-
-  const validPointsCount = Math.max(points.length, 2);
-  const pathD = points
-    .map((val, idx) => {
-      const x = paddingX + (idx / (validPointsCount - 1)) * chartW;
-      const normalizedY = Math.min(Math.max(val / (maxValue || 1), 0), 1);
-      const y = height - paddingY - normalizedY * chartH;
-      return `${idx === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
-    })
-    .join(" ");
-
-  const areaD =
-    points.length > 1
-      ? `${pathD} L ${(paddingX + chartW).toFixed(1)} ${(height - paddingY).toFixed(1)} L ${paddingX.toFixed(1)} ${(height - paddingY).toFixed(1)} Z`
-      : "";
+  const pathD = data.path;
+  // Не соединять отсутствующие измерения заливкой или линией.
+  const areaD = "";
 
   return (
     <article className="bg-surface border border-line rounded-xl p-5 flex flex-col justify-between">
@@ -127,7 +89,7 @@ export const ActivityChart: React.FC<ActivityChartProps> = ({ history }) => {
               Формирование дельты измерений
             </strong>
             <span className="text-xs text-muted mt-0.5">
-              Первый замер фиксирует базис, график заполнится через секунду
+              Нужны достоверные измерения; недоступные данные не заменяются нулями
             </span>
           </div>
         ) : (
@@ -161,9 +123,9 @@ export const ActivityChart: React.FC<ActivityChartProps> = ({ history }) => {
               )}
 
               {/* Point on the latest value */}
-              {points.length > 0 && (
+              {latestValue !== null && (
                 <circle
-                  cx={points.length > 1 ? paddingX + chartW : paddingX}
+                  cx={paddingX + chartW}
                   cy={
                     height -
                     paddingY -

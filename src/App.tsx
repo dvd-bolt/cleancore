@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ActivePage, AppInfo, AppSettings, MetricSnapshot, ProcessItem } from "./types";
 import {
   fetchAppInfo,
@@ -8,6 +8,7 @@ import {
   saveRefreshInterval,
   togglePauseMetrics,
   subscribeToMetrics,
+  isTauriEnvironment,
 } from "./lib/ipc";
 import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
@@ -21,6 +22,7 @@ import { AlertCircle } from "lucide-react";
 export function App() {
   const [activePage, setActivePage] = useState<ActivePage>("overview");
   const [isPaused, setIsPaused] = useState(false);
+  const pausePending = useRef(false);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [metrics, setMetrics] = useState<MetricSnapshot | null>(null);
@@ -69,20 +71,26 @@ export function App() {
   // Подписка на фоновые события обновления метрик от бэкенда Tauri
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
+    let disposed = false;
 
     async function subscribe() {
-      unsubscribe = await subscribeToMetrics((snapshot) => {
+      const stop = await subscribeToMetrics((snapshot) => {
+        if (disposed) return;
         setMetrics(snapshot);
         setMetricsHistory((prev) => {
           const next = [...prev, snapshot];
-          return next.slice(-30); // хранить последние 30 точек
+          const newest = Date.parse(snapshot.timestamp_utc);
+          return next.filter((item) => Date.parse(item.timestamp_utc) >= newest - 60000).slice(-121);
         });
       });
+      if (disposed) stop();
+      else unsubscribe = stop;
     }
 
-    subscribe();
+    subscribe().catch((err) => { if (!disposed) setError(err instanceof Error ? err.message : String(err)); });
 
     return () => {
+      disposed = true;
       if (unsubscribe) {
         unsubscribe();
       }
@@ -93,30 +101,36 @@ export function App() {
   useEffect(() => {
     if (isPaused) return;
 
+    let disposed = false;
+    let pending = false;
     const interval = setInterval(async () => {
+      if (pending) return;
+      pending = true;
       try {
         const snapshot = await fetchProcessList();
-        setProcesses(snapshot.processes);
+        if (!disposed) setProcesses(snapshot.processes);
       } catch (e) {
-        console.warn("Фоновое обновление процессов:", e);
-      }
+        if (!disposed) setError(e instanceof Error ? e.message : String(e));
+      } finally { pending = false; }
     }, 10000);
 
-    return () => clearInterval(interval);
+    return () => { disposed = true; clearInterval(interval); };
   }, [isPaused]);
 
   // Переключение паузы
   const handleTogglePause = async () => {
+    if (pausePending.current) return;
+    pausePending.current = true;
     const nextPaused = !isPaused;
-    setIsPaused(nextPaused);
     try {
       await togglePauseMetrics(nextPaused);
+      setIsPaused(nextPaused);
       if (settings) {
         setSettings({ ...settings, is_monitoring_paused: nextPaused });
       }
     } catch (e) {
-      console.error("Ошибка переключения паузы:", e);
-    }
+      setError(e instanceof Error ? e.message : String(e));
+    } finally { pausePending.current = false; }
   };
 
   // Сохранение нового интервала опроса
@@ -130,8 +144,9 @@ export function App() {
     try {
       const snapshot = await fetchProcessList();
       setProcesses(snapshot.processes);
+      return snapshot;
     } catch (e) {
-      console.warn("Ошибка обновления процессов:", e);
+      throw e instanceof Error ? e : new Error(String(e));
     }
   };
 
@@ -213,7 +228,10 @@ export function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto px-8 py-6">
-        <div className="max-w-7xl mx-auto">{renderContent()}</div>
+        <div className="max-w-7xl mx-auto">
+          {!isTauriEnvironment() && <p role="status" className="text-xs text-muted mb-4">Предпросмотр интерфейса в браузере: системный backend и SQLite не подключены.</p>}
+          {renderContent()}
+        </div>
       </main>
 
       {/* Bottom Status Footer */}

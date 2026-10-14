@@ -1,4 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 import {
   fetchAppInfo,
   fetchInitialMetrics,
@@ -8,9 +10,22 @@ import {
   saveRefreshInterval,
   togglePauseMetrics,
   pingBackend,
+  startCleanupScan,
+  getScanProgress,
+  cancelCleanupScan,
+  getCleanupPreview,
 } from "./ipc";
 
 describe("IPC Bridge & Fallback behavior", () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
+
+  it("propagates a native IPC error instead of silently returning browser preview data", async () => {
+    vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+    vi.mocked(invoke).mockRejectedValue({ code: "STORAGE_ERROR", message: "Database is read-only" });
+    await expect(fetchAppSettings()).rejects.toThrow("Database is read-only");
+    await expect(fetchMetricSnapshot()).rejects.toThrow("Database is read-only");
+    await expect(fetchProcessList()).rejects.toThrow("Database is read-only");
+  });
   it("provides safe fallback app info in non-Tauri web environment", async () => {
     const info = await fetchAppInfo();
     expect(info.name).toContain("CleanCore");
@@ -51,5 +66,23 @@ describe("IPC Bridge & Fallback behavior", () => {
   it("handles ping gracefully", async () => {
     const pong = await pingBackend();
     expect(typeof pong).toBe("string");
+  });
+
+  it("handles cleanup scanner IPC flow safely in preview mode", async () => {
+    const taskId = await startCleanupScan("user-temp-v1");
+    expect(typeof taskId).toBe("string");
+
+    const progress = await getScanProgress(taskId);
+    expect(progress.id).toBe(taskId);
+    expect(progress.state).toBe("Completed");
+
+    const cancelled = await cancelCleanupScan(taskId);
+    expect(cancelled).toBe(true);
+
+    const preview = await getCleanupPreview(taskId, 0, 10);
+    expect(preview.preview_id).toBe(taskId);
+    expect(preview.items.length).toBeGreaterThan(0);
+    expect(preview.items[0].display_path).toBeDefined();
+    expect(preview.items[0].risk_level).toBe("Low");
   });
 });

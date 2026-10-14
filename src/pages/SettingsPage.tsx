@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { isTauriEnvironment } from "../lib/ipc";
 import { AppInfo, AppSettings } from "../types";
 import { Sliders, Shield, Palette, Info, Database, Check } from "lucide-react";
 
@@ -15,6 +16,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 }) => {
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const currentIntervalSec = Math.round(
     (settings?.refresh_interval_ms || 2000) / 1000
@@ -23,13 +25,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const handleIntervalChange = async (sec: "2" | "5" | "10") => {
     setSaving(true);
     setSavedSuccess(false);
+    setSaveError(null);
     try {
       const ms = parseInt(sec, 10) * 1000;
       await onUpdateInterval(ms);
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2500);
     } catch (e) {
-      console.error("Ошибка сохранения интервала:", e);
+      setSaveError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
@@ -50,6 +53,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         </p>
       </div>
 
+      {saveError && <p role="alert" className="text-xs text-red-300">Не удалось сохранить настройки: {saveError}</p>}
       {/* Settings Grid */}
       <div className="space-y-4">
         {/* Setting 1: Refresh Interval */}
@@ -65,7 +69,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 </h3>
                 {savedSuccess && (
                   <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-mono">
-                    <Check className="w-3 h-3" /> Сохранено в SQLite
+                    <Check className="w-3 h-3" /> {isTauriEnvironment() ? "Сохранено в SQLite" : "Изменено только в предпросмотре"}
                   </span>
                 )}
               </div>

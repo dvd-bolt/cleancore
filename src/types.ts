@@ -71,4 +71,38 @@ export interface ApiError {
   message: string;
 }
 
+export type TaskState = "Pending" | "Running" | "Completed" | "Cancelled" | "Failed";
+
+export interface TaskStatus {
+  id: string;
+  kind: string;
+  state: TaskState;
+  processed_items: number;
+  total_items?: number | null;
+  error_message?: string | null;
+}
+
+export type RiskLevel = "Low" | "Medium" | "High" | "Critical";
+
+export interface CleanupCandidate {
+  obj_id: string;
+  display_path: string;
+  absolute_path: string;
+  size_bytes: number;
+  category_id: string;
+  reason: string;
+  modified_time_utc: string;
+  risk_level: RiskLevel;
+}
+
+export interface CleanupPreviewPage {
+  preview_id: string;
+  category_id: string;
+  offset: number;
+  limit: number;
+  total_candidates: number;
+  total_bytes: number;
+  items: CleanupCandidate[];
+}
+
 export type ActivePage = "overview" | "processes" | "cleanup" | "journal" | "settings";

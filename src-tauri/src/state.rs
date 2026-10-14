@@ -1,5 +1,6 @@
 //! Управление состоянием настольного приложения CleanCore.
 
+use cleaner_cleanup::tasks::TaskManager;
 use cleaner_core::models::AppInfo;
 use cleaner_storage::StorageManager;
 use cleaner_system::collector::SystemCollector;
@@ -11,8 +12,10 @@ pub struct AppState {
     pub app_info: Mutex<AppInfo>,
     pub collector: Mutex<SystemCollector>,
     pub storage: Arc<StorageManager>,
+    pub task_manager: Arc<TaskManager>,
     pub is_paused: AtomicBool,
     pub interval_ms: AtomicU64,
+    pub settings_change: Mutex<()>,
 }
 
 impl Default for AppState {
@@ -30,15 +33,17 @@ impl Default for AppState {
         Self {
             app_info: Mutex::new(AppInfo {
                 name: "CleanCore".to_string(),
-                version: "0.0.2".to_string(),
+                version: "0.0.3".to_string(),
                 is_local_mode: true,
                 is_admin: false,
                 theme: initial_settings.theme,
             }),
             collector: Mutex::new(SystemCollector::new()),
             storage,
+            task_manager: Arc::new(TaskManager::new()),
             is_paused: AtomicBool::new(initial_settings.is_monitoring_paused),
             interval_ms: AtomicU64::new(initial_settings.refresh_interval_ms),
+            settings_change: Mutex::new(()),
         }
     }
 }

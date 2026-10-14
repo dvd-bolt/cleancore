@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-save-refresh-interval"
+description = "Enables the save_refresh_interval command without any pre-configured scope."
+commands.allow = ["save_refresh_interval"]
+
+[[permission]]
+identifier = "deny-save-refresh-interval"
+description = "Denies the save_refresh_interval command without any pre-configured scope."
+commands.deny = ["save_refresh_interval"]

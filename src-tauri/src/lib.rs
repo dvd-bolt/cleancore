@@ -19,6 +19,10 @@ pub fn run() {
             commands::get_app_settings,
             commands::save_refresh_interval,
             commands::toggle_pause_metrics,
+            commands::start_cleanup_scan,
+            commands::get_scan_progress,
+            commands::cancel_cleanup_scan,
+            commands::get_cleanup_preview,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();

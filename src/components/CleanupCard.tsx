@@ -28,7 +28,7 @@ export const CleanupCard: React.FC<CleanupCardProps> = ({ onOpenCleanup }) => {
         </h3>
 
         <p className="text-xs text-muted leading-relaxed mb-4">
-          Найди временные файлы системы и проверь подробный список кандидатов перед подтверждением.
+          Безопасный анализ временных файлов без риска: находите кандидатов без удаления.
         </p>
       </div>
 

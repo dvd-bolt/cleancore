@@ -1,8 +1,9 @@
 //! Узкие команды Tauri IPC с типизированной валидацией и обработкой ошибок.
 
 use cleaner_core::errors::ApiError;
-use cleaner_core::models::{AppInfo, AppSettings, MetricSnapshot, ProcessSnapshot};
-use cleaner_system::collector::collect_processes;
+use cleaner_core::models::{
+    AppInfo, AppSettings, CleanupPreviewPage, MetricSnapshot, ProcessSnapshot, TaskStatus,
+};
 use tauri::State;
 
 use crate::state::AppState;
@@ -26,7 +27,7 @@ pub fn ping() -> Result<String, ApiError> {
 /// Возвращает актуальный снимок системных показателей (CPU, RAM, диски, сеть).
 /// На первом замере загрузка CPU честно возвращается как `FieldValue::NotMeasured`.
 #[tauri::command]
-pub fn get_metric_snapshot(state: State<'_, AppState>) -> Result<MetricSnapshot, ApiError> {
+pub async fn get_metric_snapshot(state: State<'_, AppState>) -> Result<MetricSnapshot, ApiError> {
     let mut collector = state.collector.lock().map_err(|e| ApiError {
         code: "COLLECTOR_LOCK_ERROR".into(),
         message: format!("Ошибка доступа к системному сборщику: {e}"),
@@ -42,13 +43,13 @@ pub fn get_metric_snapshot(state: State<'_, AppState>) -> Result<MetricSnapshot,
 /// Системные процессы с ограниченным доступом Windows возвращают `FieldValue::AccessDenied`.
 /// Завершение процессов запрещено ТЗ.
 #[tauri::command]
-pub fn get_process_list(state: State<'_, AppState>) -> Result<ProcessSnapshot, ApiError> {
+pub async fn get_process_list(state: State<'_, AppState>) -> Result<ProcessSnapshot, ApiError> {
     let mut collector = state.collector.lock().map_err(|e| ApiError {
         code: "COLLECTOR_LOCK_ERROR".into(),
         message: format!("Ошибка доступа к системному сборщику: {e}"),
     })?;
 
-    let snapshot = collect_processes(collector.system_mut());
+    let snapshot = collector.collect_processes();
     Ok(snapshot)
 }
 
@@ -74,11 +75,14 @@ pub fn save_refresh_interval(
         });
     }
 
-    state.set_interval_ms(interval_ms);
-
-    let mut settings = state.storage.load_app_settings().unwrap_or_default();
+    let _guard = state.settings_change.lock().map_err(|_| ApiError {
+        code: "STATE_LOCK_ERROR".into(),
+        message: "Настройки недоступны".into(),
+    })?;
+    let mut settings = state.storage.load_app_settings()?;
     settings.refresh_interval_ms = interval_ms;
     state.storage.save_app_settings(&settings)?;
+    state.set_interval_ms(interval_ms);
 
     Ok(settings)
 }
@@ -86,11 +90,59 @@ pub fn save_refresh_interval(
 /// Переключает режим паузы мониторинга.
 #[tauri::command]
 pub fn toggle_pause_metrics(state: State<'_, AppState>, paused: bool) -> Result<bool, ApiError> {
+    let _guard = state.settings_change.lock().map_err(|_| ApiError {
+        code: "STATE_LOCK_ERROR".into(),
+        message: "Настройки недоступны".into(),
+    })?;
+    let mut settings = state.storage.load_app_settings()?;
+    settings.is_monitoring_paused = paused;
+    state.storage.save_app_settings(&settings)?;
     state.set_paused(paused);
 
-    let mut settings = state.storage.load_app_settings().unwrap_or_default();
-    settings.is_monitoring_paused = paused;
-    let _ = state.storage.save_app_settings(&settings);
-
     Ok(paused)
+}
+
+/// Запуск безопасного фонового анализа выбранной категории очистки.
+/// На этапе 3 поддерживается категория "user-temp-v1".
+/// Сканируемые файлы НЕ удаляются и НЕ изменяются.
+#[tauri::command]
+pub fn start_cleanup_scan(
+    state: State<'_, AppState>,
+    category_id: String,
+) -> Result<String, ApiError> {
+    state.task_manager.start_scan(&category_id)
+}
+
+/// Получение актуального прогресса и статуса задачи сканирования.
+#[tauri::command]
+pub fn get_scan_progress(
+    state: State<'_, AppState>,
+    task_id: String,
+) -> Result<TaskStatus, ApiError> {
+    state
+        .task_manager
+        .get_task_status(&task_id)
+        .ok_or_else(|| ApiError {
+            code: "TASK_NOT_FOUND".into(),
+            message: format!("Задача сканирования не найдена: {task_id}"),
+        })
+}
+
+/// Запрос безопасной отмены выполняющегося сканирования.
+#[tauri::command]
+pub fn cancel_cleanup_scan(state: State<'_, AppState>, task_id: String) -> Result<bool, ApiError> {
+    Ok(state.task_manager.cancel_scan(&task_id))
+}
+
+/// Порционная выдача результатов предварительного просмотра (Preview) без блокировки UI.
+#[tauri::command]
+pub fn get_cleanup_preview(
+    state: State<'_, AppState>,
+    preview_id: String,
+    offset: usize,
+    limit: usize,
+) -> Result<CleanupPreviewPage, ApiError> {
+    state
+        .task_manager
+        .get_preview_page(&preview_id, offset, limit)
 }

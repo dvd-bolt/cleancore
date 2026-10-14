@@ -55,6 +55,7 @@ impl StorageManager {
             db_path,
         };
         manager.init_schema()?;
+        manager.init_audit()?;
         Ok(manager)
     }
 
@@ -66,6 +67,7 @@ impl StorageManager {
             db_path: PathBuf::from(":memory:"),
         };
         manager.init_schema()?;
+        manager.init_audit()?;
         Ok(manager)
     }
 
@@ -93,7 +95,7 @@ impl StorageManager {
         Ok(())
     }
 
-    fn lock_conn(&self) -> Result<MutexGuard<'_, Connection>, StorageError> {
+    pub(crate) fn lock_conn(&self) -> Result<MutexGuard<'_, Connection>, StorageError> {
         self.conn
             .lock()
             .map_err(|e| StorageError::Lock(format!("Мьютекс базы данных повреждён: {e}")))
@@ -152,19 +154,26 @@ impl StorageManager {
 
     /// Сохраняет пользовательские настройки в базу данных.
     pub fn save_app_settings(&self, settings: &AppSettings) -> Result<(), StorageError> {
-        self.set_setting(
-            "refresh_interval_ms",
-            &settings.refresh_interval_ms.to_string(),
-        )?;
-        self.set_setting("theme", &settings.theme)?;
-        self.set_setting(
-            "is_monitoring_paused",
-            if settings.is_monitoring_paused {
-                "true"
-            } else {
-                "false"
-            },
-        )?;
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        for (key, value) in [
+            (
+                "refresh_interval_ms",
+                settings.refresh_interval_ms.to_string(),
+            ),
+            ("theme", settings.theme.clone()),
+            (
+                "is_monitoring_paused",
+                settings.is_monitoring_paused.to_string(),
+            ),
+        ] {
+            tx.execute(
+                "INSERT INTO settings (key, value) VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                params![key, value],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -177,6 +186,31 @@ impl StorageManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_save_rolls_back_on_partial_failure() {
+        let storage = StorageManager::in_memory().unwrap();
+        storage.save_app_settings(&AppSettings::default()).unwrap();
+        storage
+            .lock_conn()
+            .unwrap()
+            .execute_batch(
+                "CREATE TRIGGER reject_theme BEFORE UPDATE ON settings
+             WHEN NEW.key = 'theme' BEGIN SELECT RAISE(ABORT, 'test failure'); END;",
+            )
+            .unwrap();
+        let changed = AppSettings {
+            refresh_interval_ms: 5000,
+            is_monitoring_paused: true,
+            ..AppSettings::default()
+        };
+        assert!(storage.save_app_settings(&changed).is_err());
+        assert_eq!(
+            storage.load_app_settings().unwrap().refresh_interval_ms,
+            2000
+        );
+        assert!(!storage.load_app_settings().unwrap().is_monitoring_paused);
+    }
 
     #[test]
     fn test_in_memory_settings_crud() {

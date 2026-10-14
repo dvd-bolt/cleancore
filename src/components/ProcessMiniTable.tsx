@@ -47,7 +47,7 @@ export const ProcessMiniTable: React.FC<ProcessMiniTableProps> = ({
           <div className="w-8 h-8 rounded-full bg-shell border border-line flex items-center justify-center text-dim mb-2">
             <Cpu className="w-4 h-4" />
           </div>
-          <strong className="text-xs font-medium text-txt">Опрос процессов...</strong>
+          <strong className="text-xs font-medium text-txt">Нет данных о процессах</strong>
           <span className="text-[11px] text-muted mt-0.5">
             Данные читаются без административных привилегий
           </span>
@@ -55,8 +55,8 @@ export const ProcessMiniTable: React.FC<ProcessMiniTableProps> = ({
       ) : (
         <div className="divide-y divide-line/40 font-mono text-xs my-1">
           {topProcesses.map((proc) => {
-            const cpuVal = proc.cpu_percent.value;
-            const memBytes = proc.memory_bytes.value;
+            const cpuVal = proc.cpu_percent.status === "Available" ? proc.cpu_percent.value : undefined;
+            const memBytes = proc.memory_bytes.status === "Available" ? proc.memory_bytes.value : undefined;
             const memMb =
               memBytes !== undefined ? (memBytes / (1024 * 1024)).toFixed(0) : "—";
 

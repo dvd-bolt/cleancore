@@ -1,6 +1,8 @@
 //! Сбор и нормализация сведений о запущенных процессах.
 
 use cleaner_core::models::{FieldValue, ProcessItem, ProcessSnapshot};
+use std::collections::HashMap;
+use std::time::Instant;
 use sysinfo::{ProcessesToUpdate, System};
 
 /// Собирает актуальный снимок запущенных процессов системы.
@@ -12,8 +14,17 @@ use sysinfo::{ProcessesToUpdate, System};
 ///   путём деления на число логических ядер процессора.
 /// - Модуль не содержит никаких команд или методов для завершения (kill) процессов.
 pub fn collect_processes(sys: &mut System) -> ProcessSnapshot {
+    collect_processes_with_baselines(sys, &mut HashMap::new())
+}
+
+pub(crate) fn collect_processes_with_baselines(
+    sys: &mut System,
+    baselines: &mut HashMap<u32, (u64, Instant)>,
+) -> ProcessSnapshot {
     // Обновляем список процессов
     sys.refresh_processes(ProcessesToUpdate::All, true);
+    let now = Instant::now();
+    baselines.retain(|pid, _| sys.process(sysinfo::Pid::from_u32(*pid)).is_some());
 
     let core_count = sys.cpus().len().max(1) as f32;
     let mut items = Vec::with_capacity(sys.processes().len());
@@ -24,13 +35,18 @@ pub fn collect_processes(sys: &mut System) -> ProcessSnapshot {
 
         // Нормализация использования CPU: приведение к шкале 0..100%
         let raw_cpu = proc.cpu_usage();
-        let normalized_cpu = if raw_cpu.is_finite() && raw_cpu >= 0.0 {
-            (raw_cpu / core_count).clamp(0.0, 100.0)
+        let warmed = baselines.get(&pid_u32).is_some_and(|(started, at)| {
+            *started == proc.start_time()
+                && now.duration_since(*at) >= sysinfo::MINIMUM_CPU_UPDATE_INTERVAL
+        });
+        let cpu_field = if !warmed {
+            FieldValue::NotMeasured
+        } else if raw_cpu.is_finite() && raw_cpu >= 0.0 {
+            FieldValue::Available((raw_cpu / core_count).clamp(0.0, 100.0))
         } else {
-            0.0
+            FieldValue::Unavailable("Недостоверный замер CPU процесса".into())
         };
-
-        let cpu_field = FieldValue::Available(normalized_cpu);
+        baselines.insert(pid_u32, (proc.start_time(), now));
 
         // Память процесса (RSS в байтах)
         let memory_bytes = proc.memory();
@@ -44,7 +60,7 @@ pub fn collect_processes(sys: &mut System) -> ProcessSnapshot {
             Some(_) => FieldValue::Unavailable("Путь не указан".to_string()),
             None => {
                 // В Windows без прав администратора доступ к путям системных процессов закрыт ОС
-                FieldValue::AccessDenied
+                FieldValue::Unavailable("Путь процесса недоступен".into())
             }
         };
 
@@ -75,9 +91,7 @@ pub fn collect_processes(sys: &mut System) -> ProcessSnapshot {
     });
 
     ProcessSnapshot {
-        timestamp_utc: crate::metrics::SystemCollector::default()
-            .collect_snapshot(2000)
-            .timestamp_utc,
+        timestamp_utc: crate::metrics::chrono_or_simple_utc_now(),
         processes: items,
     }
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-metric-snapshot"
+description = "Enables the get_metric_snapshot command without any pre-configured scope."
+commands.allow = ["get_metric_snapshot"]
+
+[[permission]]
+identifier = "deny-get-metric-snapshot"
+description = "Denies the get_metric_snapshot command without any pre-configured scope."
+commands.deny = ["get_metric_snapshot"]

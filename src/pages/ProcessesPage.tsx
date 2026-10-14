@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { ProcessItem } from "../types";
+import { ProcessItem, ProcessSnapshot } from "../types";
 import { fetchProcessList } from "../lib/ipc";
 import { Search, RefreshCw, Cpu, ArrowUpDown, ShieldAlert, Folder } from "lucide-react";
 
@@ -7,7 +7,7 @@ type SortField = "cpu" | "memory" | "name" | "pid";
 
 interface ProcessesPageProps {
   initialProcesses?: ProcessItem[];
-  onRefresh?: () => Promise<void>;
+  onRefresh?: () => Promise<ProcessSnapshot>;
 }
 
 export const ProcessesPage: React.FC<ProcessesPageProps> = ({
@@ -15,7 +15,7 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({
   onRefresh,
 }) => {
   const [processes, setProcesses] = useState<ProcessItem[]>(initialProcesses);
-  const [loading, setLoading] = useState<boolean>(initialProcesses.length === 0);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortField, setSortField] = useState<SortField>("cpu");
@@ -26,18 +26,15 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const snapshot = await fetchProcessList();
+      const snapshot = await (onRefresh ? onRefresh() : fetchProcessList());
       setProcesses(snapshot.processes);
       setLastUpdated(
-        new Date().toLocaleTimeString("ru-RU", {
+        new Date(snapshot.timestamp_utc).toLocaleTimeString("ru-RU", {
           hour: "2-digit",
           minute: "2-digit",
           second: "2-digit",
         })
       );
-      if (onRefresh) {
-        await onRefresh();
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -46,12 +43,8 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({
   };
 
   useEffect(() => {
-    if (initialProcesses.length > 0) {
-      setProcesses(initialProcesses);
-      setLoading(false);
-    } else {
-      loadProcesses();
-    }
+    setProcesses(initialProcesses);
+    setLoading(false);
   }, [initialProcesses]);
 
   const handleSort = (field: SortField) => {
@@ -81,19 +74,19 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({
     let comparison = 0;
     switch (sortField) {
       case "cpu": {
-        const valA = a.cpu_percent.value ?? 0;
-        const valB = b.cpu_percent.value ?? 0;
+        const valA = a.cpu_percent.status === "Available" ? (a.cpu_percent.value ?? 0) : -1;
+        const valB = b.cpu_percent.status === "Available" ? (b.cpu_percent.value ?? 0) : -1;
         comparison = valA - valB;
         if (comparison === 0) {
-          const memA = a.memory_bytes.value ?? 0;
-          const memB = b.memory_bytes.value ?? 0;
+          const memA = a.memory_bytes.status === "Available" ? (a.memory_bytes.value ?? 0) : -1;
+          const memB = b.memory_bytes.status === "Available" ? (b.memory_bytes.value ?? 0) : -1;
           comparison = memA - memB;
         }
         break;
       }
       case "memory": {
-        const valA = a.memory_bytes.value ?? 0;
-        const valB = b.memory_bytes.value ?? 0;
+        const valA = a.memory_bytes.status === "Available" ? (a.memory_bytes.value ?? 0) : -1;
+        const valB = b.memory_bytes.status === "Available" ? (b.memory_bytes.value ?? 0) : -1;
         comparison = valA - valB;
         break;
       }
@@ -150,7 +143,8 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({
             type="search"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Поиск по названию, PID или пути..."
+            aria-label="Поиск процессов по имени, PID или пути"
+              placeholder="Поиск по названию, PID или пути..."
             className="w-full bg-shell border border-line rounded-lg pl-9 pr-4 py-2 text-xs text-txt placeholder:text-dim focus:outline-none focus:border-accent transition-all font-mono"
           />
         </div>
@@ -223,14 +217,14 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({
               Ничего не найдено
             </h3>
             <p className="text-xs text-muted max-w-md mt-1 leading-relaxed">
-              По запросу «{searchTerm}» подходящих процессов не обнаружено.
+              {searchTerm ? `По запросу «${searchTerm}» подходящих процессов не обнаружено.` : "Нет данных о процессах. Мониторинг может быть недоступен."}
             </p>
           </div>
         ) : (
           <div className="divide-y divide-line/30 max-h-[600px] overflow-y-auto font-mono text-xs">
             {sorted.map((proc) => {
-              const cpuVal = proc.cpu_percent.value;
-              const memBytes = proc.memory_bytes.value;
+              const cpuVal = proc.cpu_percent.status === "Available" ? proc.cpu_percent.value : undefined;
+              const memBytes = proc.memory_bytes.status === "Available" ? proc.memory_bytes.value : undefined;
               const memMb =
                 memBytes !== undefined
                   ? memBytes > 1024 * 1024 * 1024

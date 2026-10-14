@@ -170,3 +170,36 @@ impl Default for AppSettings {
         }
     }
 }
+
+/// Кандидат на очистку, обнаруженный сканером.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CleanupCandidate {
+    /// Уникальный безопасный идентификатор объекта в рамках сессии сканирования.
+    pub obj_id: String,
+    /// Отображаемый путь к файлу.
+    pub display_path: String,
+    /// Абсолютный путь к файлу на диске (для повторной проверки перед действием).
+    pub absolute_path: String,
+    /// Размер файла в байтах.
+    pub size_bytes: u64,
+    /// Идентификатор правила/категории очистки (например, "user-temp-v1").
+    pub category_id: String,
+    /// Причина включения файла в список кандидатов.
+    pub reason: String,
+    /// Время последнего изменения файла (UTC ISO 8601).
+    pub modified_time_utc: String,
+    /// Оценка потенциального риска.
+    pub risk_level: crate::safety::RiskLevel,
+}
+
+/// Порция списка кандидатов для постраничной выдачи в интерфейс без блокировки UI.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CleanupPreviewPage {
+    pub preview_id: String,
+    pub category_id: String,
+    pub offset: usize,
+    pub limit: usize,
+    pub total_candidates: usize,
+    pub total_bytes: u64,
+    pub items: Vec<CleanupCandidate>,
+}

@@ -22,7 +22,9 @@ pub struct SystemCollector {
     sys: System,
     disks: Disks,
     networks: Networks,
-    sample_count: u64,
+    last_cpu_refresh: Option<Instant>,
+    cached_cpu_metrics: FieldValue<CpuMetrics>,
+    process_baselines: HashMap<u32, (u64, Instant)>,
     last_disk_refresh: Option<Instant>,
     cached_disk_metrics: FieldValue<DiskMetrics>,
     prev_network_samples: HashMap<String, NetworkSample>,
@@ -56,7 +58,9 @@ impl SystemCollector {
             sys,
             disks,
             networks,
-            sample_count: 0,
+            last_cpu_refresh: None,
+            cached_cpu_metrics: FieldValue::NotMeasured,
+            process_baselines: HashMap::new(),
             last_disk_refresh: None,
             cached_disk_metrics: FieldValue::NotMeasured,
             prev_network_samples: HashMap::new(),
@@ -67,25 +71,35 @@ impl SystemCollector {
     /// Производит замер и возвращает снимок системных показателей.
     /// На первом замере CPU возвращает `FieldValue::NotMeasured`, так как дельта времени ещё не сформирована.
     pub fn collect_snapshot(&mut self, interval_ms: u64) -> MetricSnapshot {
-        self.sample_count = self.sample_count.saturating_add(1);
-
         // 1. CPU
-        self.sys.refresh_cpu_all();
-        let cpu_metric = if self.sample_count <= 1 {
-            // Первый замер sysinfo не содержит рассчитанной дельты времени загрузки CPU.
-            // Честно возвращаем NotMeasured без выдуманных нулей.
-            FieldValue::NotMeasured
-        } else {
+        let now = Instant::now();
+        if self
+            .last_cpu_refresh
+            .is_none_or(|last| now.duration_since(last) >= sysinfo::MINIMUM_CPU_UPDATE_INTERVAL)
+        {
+            self.sys.refresh_cpu_all();
             let total_usage = self.sys.global_cpu_usage();
             let core_count = self.sys.cpus().len();
-            let frequency_mhz = self.sys.cpus().first().map(|c| c.frequency());
-
-            FieldValue::Available(CpuMetrics {
-                total_usage_percent: total_usage.clamp(0.0, 100.0),
-                core_count,
-                frequency_mhz,
-            })
-        };
+            let frequency_mhz = self
+                .sys
+                .cpus()
+                .first()
+                .map(|c| c.frequency())
+                .filter(|hz| *hz > 0);
+            self.cached_cpu_metrics = if self.last_cpu_refresh.is_none() {
+                FieldValue::NotMeasured
+            } else if core_count == 0 || !total_usage.is_finite() || total_usage < 0.0 {
+                FieldValue::Unavailable("Нет достоверного замера CPU".into())
+            } else {
+                FieldValue::Available(CpuMetrics {
+                    total_usage_percent: total_usage.clamp(0.0, 100.0),
+                    core_count,
+                    frequency_mhz,
+                })
+            };
+            self.last_cpu_refresh = Some(now);
+        }
+        let cpu_metric = self.cached_cpu_metrics.clone();
 
         // 2. RAM
         self.sys.refresh_memory();
@@ -148,6 +162,11 @@ impl SystemCollector {
                 let free = disk.available_space();
                 let mount = disk.mount_point().to_string_lossy().to_string();
 
+                if total == 0 {
+                    self.cached_disk_metrics =
+                        FieldValue::Unavailable("Объём диска недоступен".into());
+                    return self.cached_disk_metrics.clone();
+                }
                 let usage_percent = if total > 0 {
                     let used = total.saturating_sub(free);
                     ((used as f64 / total as f64) * 100.0).round() as u8
@@ -176,6 +195,12 @@ impl SystemCollector {
     fn collect_network_metrics(&mut self) -> FieldValue<NetworkMetrics> {
         let now = Instant::now();
         self.networks.refresh(true);
+        self.prev_network_samples
+            .retain(|name, _| self.networks.iter().any(|(current, _)| current == name));
+        if self.networks.is_empty() {
+            self.last_network_instant = None;
+            return FieldValue::Unavailable("Сетевые интерфейсы не обнаружены".into());
+        }
 
         let elapsed_sec = self
             .last_network_instant
@@ -205,11 +230,7 @@ impl SystemCollector {
                 }
             }
 
-            return FieldValue::Available(NetworkMetrics {
-                rx_bytes_per_sec: 0,
-                tx_bytes_per_sec: 0,
-                interface_name: active_iface.or_else(|| Some("Сеть".to_string())),
-            });
+            return FieldValue::NotMeasured;
         }
 
         // Вычисляем суммарную скорость по всем активным сетевым интерфейсам
@@ -225,11 +246,13 @@ impl SystemCollector {
             if let Some(prev) = self.prev_network_samples.get_mut(iface_name) {
                 // Защита от сброса счётчиков операционной системой при перезапуске адаптера:
                 // если счётчик уменьшился, то delta = 0 и обновляем базис.
-                let rx_delta = current_rx.saturating_sub(prev.total_rx_bytes);
-                let tx_delta = current_tx.saturating_sub(prev.total_tx_bytes);
-
-                let rx_speed = (rx_delta as f64 / elapsed_sec).round() as u64;
-                let tx_speed = (tx_delta as f64 / elapsed_sec).round() as u64;
+                let rates = network_rate(current_rx, prev.total_rx_bytes, elapsed_sec)
+                    .zip(network_rate(current_tx, prev.total_tx_bytes, elapsed_sec));
+                prev.total_rx_bytes = current_rx;
+                prev.total_tx_bytes = current_tx;
+                let Some((rx_speed, tx_speed)) = rates else {
+                    continue;
+                };
 
                 sum_rx_speed = sum_rx_speed.saturating_add(rx_speed);
                 sum_tx_speed = sum_tx_speed.saturating_add(tx_speed);
@@ -253,10 +276,14 @@ impl SystemCollector {
             }
         }
 
+        if best_interface.is_none() {
+            return FieldValue::NotMeasured;
+        }
         FieldValue::Available(NetworkMetrics {
             rx_bytes_per_sec: sum_rx_speed,
             tx_bytes_per_sec: sum_tx_speed,
-            interface_name: best_interface.or_else(|| Some("Ethernet/Wi-Fi".to_string())),
+            // Скорость — сумма интерфейсов, а не трафик одного выбранного адаптера.
+            interface_name: None,
         })
     }
 
@@ -269,10 +296,26 @@ impl SystemCollector {
     pub fn system_mut(&mut self) -> &mut System {
         &mut self.sys
     }
+
+    pub fn collect_processes(&mut self) -> cleaner_core::models::ProcessSnapshot {
+        crate::processes::collect_processes_with_baselines(
+            &mut self.sys,
+            &mut self.process_baselines,
+        )
+    }
+}
+
+fn network_rate(current: u64, previous: u64, elapsed: f64) -> Option<u64> {
+    if !elapsed.is_finite() || elapsed < 0.1 {
+        return None;
+    }
+    current
+        .checked_sub(previous)
+        .map(|delta| (delta as f64 / elapsed).round() as u64)
 }
 
 /// Формирует читаемую строку текущего времени UTC без тяжёлых зависимостей.
-fn chrono_or_simple_utc_now() -> String {
+pub(crate) fn chrono_or_simple_utc_now() -> String {
     use std::time::SystemTime;
     let now = SystemTime::now();
     let duration = now
@@ -308,6 +351,32 @@ fn days_to_ymd(days_since_epoch: i64) -> (i32, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn network_rate_distinguishes_missing_baseline_and_idle() {
+        assert_eq!(network_rate(10, 100, 2.0), None);
+        assert_eq!(network_rate(100, 100, 2.0), Some(0));
+        assert_eq!(network_rate(300, 100, 2.0), Some(100));
+        assert_eq!(network_rate(300, 100, 0.0), None);
+    }
+
+    #[test]
+    fn first_network_sample_is_not_a_measured_zero() {
+        let mut collector = SystemCollector::new();
+        let snapshot = collector.collect_snapshot(2000);
+        assert!(matches!(
+            snapshot.network,
+            FieldValue::NotMeasured | FieldValue::Unavailable(_)
+        ));
+        assert!(matches!(
+            collector
+                .collect_processes()
+                .processes
+                .first()
+                .map(|p| &p.cpu_percent),
+            Some(FieldValue::NotMeasured) | None
+        ));
+    }
 
     #[test]
     fn test_first_collect_returns_not_measured_for_cpu() {

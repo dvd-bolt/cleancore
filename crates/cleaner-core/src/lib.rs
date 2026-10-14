@@ -1,6 +1,7 @@
 //! CleanCore Core Library
 //! Общие модели, типизированные ошибки, правила безопасности путей и события.
 
+pub mod cleanup;
 pub mod errors;
 pub mod events;
 pub mod models;
