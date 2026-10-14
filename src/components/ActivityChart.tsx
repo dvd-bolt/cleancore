@@ -163,7 +163,7 @@ export const ActivityChart: React.FC<ActivityChartProps> = ({ history }) => {
               {/* Point on the latest value */}
               {points.length > 0 && (
                 <circle
-                  cx={paddingX + chartW}
+                  cx={points.length > 1 ? paddingX + chartW : paddingX}
                   cy={
                     height -
                     paddingY -

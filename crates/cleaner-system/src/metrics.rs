@@ -41,11 +41,13 @@ impl SystemCollector {
     pub fn new() -> Self {
         let refresh_kind = RefreshKind::nothing()
             .with_cpu(CpuRefreshKind::everything())
-            .with_memory(MemoryRefreshKind::everything());
+            .with_memory(MemoryRefreshKind::everything())
+            .with_processes(sysinfo::ProcessRefreshKind::everything());
 
         let mut sys = System::new_with_specifics(refresh_kind);
         sys.refresh_cpu_all();
         sys.refresh_memory();
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
         let disks = Disks::new_with_refreshed_list();
         let networks = Networks::new_with_refreshed_list();

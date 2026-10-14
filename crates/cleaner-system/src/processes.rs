@@ -57,14 +57,21 @@ pub fn collect_processes(sys: &mut System) -> ProcessSnapshot {
         });
     }
 
-    // По умолчанию сортируем процессы по убыванию загрузки CPU
+    // По умолчанию сортируем процессы по убыванию загрузки CPU,
+    // а при равном CPU — по объёму используемой памяти (RSS), имени и PID
     items.sort_by(|a, b| {
         let cpu_a = a.cpu_percent.value().copied().unwrap_or(0.0);
         let cpu_b = b.cpu_percent.value().copied().unwrap_or(0.0);
         cpu_b
             .partial_cmp(&cpu_a)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                let mem_a = a.memory_bytes.value().copied().unwrap_or(0);
+                let mem_b = b.memory_bytes.value().copied().unwrap_or(0);
+                mem_b.cmp(&mem_a)
+            })
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            .then_with(|| a.pid.cmp(&b.pid))
     });
 
     ProcessSnapshot {

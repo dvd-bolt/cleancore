@@ -13,21 +13,52 @@ interface OverviewPageProps {
   onNavigate: (page: ActivePage) => void;
 }
 
+function formatSpeed(bytesPerSec: number): { value: string; unit: string } {
+  if (bytesPerSec >= 1024 * 1024) {
+    return {
+      value: (bytesPerSec / (1024 * 1024)).toFixed(1),
+      unit: "МБ/с",
+    };
+  }
+  return {
+    value: (bytesPerSec / 1024).toFixed(0),
+    unit: "КБ/с",
+  };
+}
+
 export const OverviewPage: React.FC<OverviewPageProps> = ({
   metrics,
   history,
   processes,
   onNavigate,
 }) => {
-  const rxKb =
+  const rxSpeed =
     metrics?.network.status === "Available" && metrics.network.value
-      ? (metrics.network.value.rx_bytes_per_sec / 1024).toFixed(1)
+      ? formatSpeed(metrics.network.value.rx_bytes_per_sec)
       : null;
 
-  const txKb =
+  const txSpeed =
     metrics?.network.status === "Available" && metrics.network.value
-      ? (metrics.network.value.tx_bytes_per_sec / 1024).toFixed(1)
+      ? formatSpeed(metrics.network.value.tx_bytes_per_sec)
       : null;
+
+  const freeBytes = metrics?.disk.value?.free_bytes;
+  const freeGb = freeBytes !== undefined ? freeBytes / (1024 * 1024 * 1024) : null;
+  const formattedDiskFree =
+    freeGb !== null
+      ? freeGb < 10
+        ? freeGb.toFixed(1)
+        : freeGb.toFixed(0)
+      : "—";
+
+  const formattedTime =
+    metrics?.cpu.status === "Available"
+      ? new Date(metrics.timestamp_utc).toLocaleTimeString("ru-RU", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      : "Ожидание данных";
 
   return (
     <div className="space-y-6">
@@ -47,8 +78,11 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
 
         <div className="text-right font-mono text-[11px] text-dim">
           <span>Последнее обновление: </span>
-          <strong className="text-txt">
-            {metrics?.cpu.status === "Available" ? metrics.timestamp_utc : "Ожидание данных"}
+          <strong
+            className="text-txt cursor-help"
+            title={metrics?.timestamp_utc || undefined}
+          >
+            {formattedTime}
           </strong>
         </div>
       </div>
@@ -102,11 +136,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
           tag="DISK"
           icon={<HardDrive className="w-4 h-4" />}
           field={metrics?.disk || { status: "NotMeasured" }}
-          formattedValue={
-            metrics?.disk.value?.free_bytes !== undefined
-              ? (metrics.disk.value.free_bytes / (1024 * 1024 * 1024)).toFixed(0)
-              : "—"
-          }
+          formattedValue={formattedDiskFree}
           unit="ГБ"
           subText={
             metrics?.disk.value
@@ -124,8 +154,8 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
           tag="NET"
           icon={<Network className="w-4 h-4" />}
           field={metrics?.network || { status: "NotMeasured" }}
-          formattedValue={rxKb !== null ? rxKb : "—"}
-          unit="КБ/с"
+          formattedValue={rxSpeed ? rxSpeed.value : "—"}
+          unit={rxSpeed ? rxSpeed.unit : "КБ/с"}
           subText={
             metrics?.network.value?.interface_name
               ? `Адаптер: ${metrics.network.value.interface_name}`
@@ -170,13 +200,13 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
             <div className="flex items-center justify-between p-2.5 rounded-lg bg-shell border border-line">
               <span className="text-muted">↓ Приём (скорость)</span>
               <strong className="text-txt">
-                {rxKb !== null ? `${rxKb} КБ/с` : "Ожидание"}
+                {rxSpeed ? `${rxSpeed.value} ${rxSpeed.unit}` : "Ожидание"}
               </strong>
             </div>
             <div className="flex items-center justify-between p-2.5 rounded-lg bg-shell border border-line">
               <span className="text-muted">↑ Передача (скорость)</span>
               <strong className="text-txt">
-                {txKb !== null ? `${txKb} КБ/с` : "Ожидание"}
+                {txSpeed ? `${txSpeed.value} ${txSpeed.unit}` : "Ожидание"}
               </strong>
             </div>
           </div>

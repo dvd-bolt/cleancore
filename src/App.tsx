@@ -125,6 +125,16 @@ export function App() {
     setSettings(updated);
   };
 
+  // Ручное обновление списка процессов
+  const handleRefreshProcesses = async () => {
+    try {
+      const snapshot = await fetchProcessList();
+      setProcesses(snapshot.processes);
+    } catch (e) {
+      console.warn("Ошибка обновления процессов:", e);
+    }
+  };
+
   const renderContent = () => {
     if (loading) {
       return (
@@ -168,7 +178,12 @@ export function App() {
           />
         );
       case "processes":
-        return <ProcessesPage />;
+        return (
+          <ProcessesPage
+            initialProcesses={processes}
+            onRefresh={handleRefreshProcesses}
+          />
+        );
       case "cleanup":
         return <CleanupPage />;
       case "journal":
