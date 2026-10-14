@@ -59,7 +59,7 @@ Preview не расширяется после подтверждения. Из�
 ## Реализованные контракты этапа 4
 
 - `get_cleanup_availability()` → исполнение разрешено/заблокировано, постоянство журнала, причина.
-- `get_execution_preview()` → неизменяемый execution-preview либо null. Отдельное имя исключает конфликт с порционным `get_cleanup_preview` этапа 3.
+- `get_execution_preview(previewId)` → указанный неизменяемый execution-preview либо null. Без ID не подставляется последний глобальный снимок.
 - `prepare_cleanup_confirmation(previewId, selectedIds)` → одноразовое подтверждение точного набора с TTL 120 секунд. Новый выбор аннулирует прежний токен.
 - `start_confirmed_cleanup(confirmationId, acknowledged)` → зарегистрированный Running outcome с operation_id, затем spawn_blocking worker. Без true, постоянного журнала и допущенного адаптера отказ.
 - `get_cleanup_operation(operationId)` → прогресс/результат или null, включая известный исход из SQLite.
@@ -68,4 +68,4 @@ Preview не расширяется после подтверждения. Из�
 
 Wire DTO — `cleaner-core/src/cleanup.rs`; frontend — `src/features/cleanup-execution/types.ts`. Байты — десятичные строки, временные метки — Unix milliseconds (UTC). ID не превышают 128 байт; объекты берутся только из backend preview, пути через IPC не принимаются. Preview живёт 10 минут, максимум 1000 объектов и 8 активных снимков. Публикация TrustedCandidate доступна только Rust-сканеру.
 
-Текущий сканер ещё не публикует TrustedCandidate. Из его строковых путей нельзя автоматически восстановить идентичность объекта на момент сканирования; нужен новый capture во время scan и общий immutable snapshot. Контракт объединения — [STAGE4_INTEGRATION](STAGE4_INTEGRATION.md).
+Сканер захватывает TrustedCandidate во время scan и публикует только полный снимок. `get_cleanup_preview(previewId, offset, limit, query)` возвращает страницу, `execution_preview_id`, `complete`, `cancelled`, `diagnostics`, `unfiltered_candidates`. Поиск применяется до пагинации по всему снимку. Limit 1..100; ID до 128 байт; query до 512 байт. `size_bytes` и `total_bytes` — десятичные строки. Object IDs совпадают в анализе и подтверждении. Partial/Cancelled/Failed не разрешают исполнение. Задача сохраняется 10 минут, одновременно работает один scan; максимум 8 записей. Контракт объединения — [STAGE4_INTEGRATION](STAGE4_INTEGRATION.md).

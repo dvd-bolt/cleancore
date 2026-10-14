@@ -64,3 +64,8 @@ flowchart TD
 Для разделения записи файлов добавлен `cleaner-execution`: он зависит только от `cleaner-core`, владеет preview/confirmations/operations и получает CleanupJournal/ObjectAction через traits. `cleaner-storage` реализует журнал, Tauri собирает сервис. Будущий Rust-сканер может зависеть от `cleaner-execution` без обратной зависимости и циклов. Этот модуль является частью cleanup домена; вынесение связано с параллельной работой, не с отдельным сервисом.
 
 Production ObjectAction сейчас DisabledRecycle. Read-only проверка не выдаёт право на последующее удаление по пути. Деструктивного адаптера нет; его включение — отдельная обязательная приёмка 4.3.
+
+
+## Композиция этапов 1–4 после объединения
+
+TaskManager получает Arc<CleanupService> из AppState. Сканер захватывает TrustedCandidate вместе с метаданными; только полный ограниченный набор публикуется в execution. Scan и execution DTO используют одинаковые object IDs; UI передаёт ID, не пути. DirectoryLease удерживает родителей при read_dir. Пагинация и поиск выполняются в backend. Потоки останавливаются флагом shutdown/cancel при выходе. Production DisabledRecycle не допускает мутацию. [Контракты](API_CONTRACTS.md), [отчёт](reports/STAGES1_4.md).
