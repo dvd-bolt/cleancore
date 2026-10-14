@@ -11,17 +11,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+def is_ignored(path: Path) -> bool:
+    ignored_parts = {".git", "node_modules", "target", "dist", ".cargo", "gen"}
+    return any(part in ignored_parts or part.startswith(".git") for part in path.parts)
+
 def check_file_encodings():
     errors = []
-    text_extensions = {".md", ".txt", ".json", ".yml", ".yaml", ".editorconfig", ".gitignore", ".js", ".css", ".html", ".toml"}
+    text_extensions = {".md", ".txt", ".json", ".yml", ".yaml", ".editorconfig", ".gitignore", ".js", ".ts", ".tsx", ".css", ".html", ".toml", ".rs"}
     checked_count = 0
     
     for path in ROOT.rglob("*"):
         if path.is_file():
-            # Пропускаем .git, бинарники, docx и jpg
-            if any(part.startswith(".git") for part in path.parts):
+            if is_ignored(path):
                 continue
-            if path.suffix.lower() in {".docx", ".jpg", ".jpeg", ".png", ".ico", ".bin"}:
+            if path.suffix.lower() in {".docx", ".jpg", ".jpeg", ".png", ".ico", ".icns", ".bin", ".exe", ".pdb"}:
                 continue
             if path.suffix.lower() in text_extensions or path.name in {"LICENSE"}:
                 checked_count += 1
@@ -52,12 +55,10 @@ def check_file_encodings():
 def check_markdown_links():
     errors = []
     link_count = 0
-    # Регулярка для Markdown-ссылок: [text](target)
-    # Игнорируем картинки ![alt](target) или учитываем их тоже? Да, файл картинки тоже должен существовать!
     link_pattern = re.compile(r'!?\[([^\]]*)\]\(([^)]+)\)')
     
     for path in ROOT.rglob("*.md"):
-        if any(part.startswith(".git") for part in path.parts):
+        if is_ignored(path):
             continue
         try:
             content = path.read_text(encoding="utf-8")
@@ -99,7 +100,7 @@ def check_markdown_tables():
     table_count = 0
     
     for path in ROOT.rglob("*.md"):
-        if any(part.startswith(".git") for part in path.parts):
+        if is_ignored(path):
             continue
         try:
             lines = path.read_text(encoding="utf-8").splitlines()

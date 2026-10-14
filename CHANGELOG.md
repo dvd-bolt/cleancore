@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+### 2026-10-14 — v0.0.1 (Этап 1: каркас приложения)
+
+- Создан Rust workspace: крейт `cleaner-core` с типизированными моделями (`MetricSnapshot`, `FieldValue`, `ProcessItem`), системой ошибок `CoreError`/`ApiError`, защитой путей `PathGuard` и событиями `AppEvent`.
+- Реализована десктопная оболочка Tauri 2 (`src-tauri` / `cleancore`): команды `get_app_info`, `ping`, `get_initial_metrics`, строгие разрешения в `capabilities/default.json` и CSP-политики.
+- Сгенерированы базовые иконки для сборки Windows-ресурсов (`scripts/generate_icons.py`).
+- Реализован интерфейс на React 19 + TypeScript + Vite + Tailwind CSS в утверждённом стиле Studio Жемчуг (Pearl).
+- Созданы 5 экранов: Обзор, Процессы, Очистка, Журнал, Настройки; компоненты Header, MetricCard, ActivityChart, CleanupCard, ProcessMiniTable, Footer.
+- Реализованы состояния Loading, Error и NotMeasured без выдуманных нулей, безопасный мост IPC с веб-fallback.
+- Успешно пройдены все тесты: `cargo test` (7 тестов), `vitest` (3 теста), Clippy, `tsc`, production build и сборка `cleancore.exe`.
+
 ### 2026-10-14 — утверждение дизайна (решение 001)
 
 - Принято решение 001: для приложения зафиксированы компоновка Studio (просторный центр обслуживания с верхней навигацией и единым рядом метрик) и цветовая палитра Жемчуг (Pearl: `#171819` / `#2a2c2f` / `#e0e3e9`).

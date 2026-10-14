@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "CleanCore default window capabilities without elevation or arbitrary shell execution",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}

@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cleaner-core",
+    "src-tauri",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+authors = ["CleanCore contributors"]
+license = "MIT"
+repository = "https://github.com/dvd-bolt/cleancore"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
