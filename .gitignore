@@ -45,5 +45,8 @@ Desktop.ini
 *.p12
 *.key
 
+# Agent transient runs
+/.agents/teamwork/
+
 # Keep Cargo.lock and the selected frontend lockfile tracked.
 # Intentional test fixtures must be explicitly reviewed before adding exceptions.

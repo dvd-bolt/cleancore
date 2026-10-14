@@ -1,16 +1,23 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import {
+  AntivirusStatus,
   AppInfo,
   AppSettings,
   CleanupPreviewPage,
+  CsvExportConfig,
+  DiagnosticsSummary,
   DiskAnalysisReport,
   DiskTaskStatus,
   DuplicateScanResult,
+  InstalledProgram,
+  LaunchResult,
   MetricSnapshot,
   ProcessSnapshot,
   QuickDirectory,
   ResourceHistory,
+  StartupItem,
+  SystemToolId,
   TaskStatus,
 } from "../types";
 
@@ -316,4 +323,182 @@ export async function fetchResourceHistory(): Promise<ResourceHistory> {
     network_tx_bytes_sec,
   };
 }
+
+// --- Stage 6: Service Center («Центр обслуживания») IPC Wrappers ---
+
+export async function getServicePrograms(): Promise<InstalledProgram[]> {
+  if (isTauriEnvironment()) {
+    return await invokeCommand<InstalledProgram[]>("list_installed_programs");
+  }
+
+  return [
+    {
+      id: "HKLM_64_7Zip",
+      display_name: "7-Zip 24.08 (x64)",
+      publisher: "Igor Pavlov",
+      display_version: "24.08",
+      install_date: "20260115",
+      estimated_size_bytes: 5242880,
+      uninstall_string: "C:\\Program Files\\7-Zip\\Uninstall.exe",
+      quiet_uninstall_string: null,
+      install_location: "C:\\Program Files\\7-Zip",
+      registry_hive: "HKLM",
+      is_wow64: false,
+      is_system_component: false,
+    },
+    {
+      id: "HKCU_64_VSCode",
+      display_name: "Microsoft Visual Studio Code",
+      publisher: "Microsoft Corporation",
+      display_version: "1.95.0",
+      install_date: "20260210",
+      estimated_size_bytes: 380000000,
+      uninstall_string: "C:\\Users\\User\\AppData\\Local\\Programs\\Microsoft VS Code\\unins000.exe",
+      quiet_uninstall_string: null,
+      install_location: "C:\\Users\\User\\AppData\\Local\\Programs\\Microsoft VS Code",
+      registry_hive: "HKCU",
+      is_wow64: false,
+      is_system_component: false,
+    },
+    {
+      id: "HKLM_32_Git",
+      display_name: "Git version 2.47.0",
+      publisher: "The Git Development Community",
+      display_version: "2.47.0",
+      install_date: "20260120",
+      estimated_size_bytes: 320000000,
+      uninstall_string: "C:\\Program Files\\Git\\unins000.exe",
+      quiet_uninstall_string: null,
+      install_location: "C:\\Program Files\\Git",
+      registry_hive: "HKLM",
+      is_wow64: true,
+      is_system_component: false,
+    },
+  ];
+}
+
+export async function launchServiceUninstaller(programId: string): Promise<LaunchResult> {
+  if (isTauriEnvironment()) {
+    return await invokeCommand<LaunchResult>("launch_uninstaller", { programId });
+  }
+
+  return {
+    success: true,
+    pid: 1234,
+    message: `Штатный деинсталлятор для программы '${programId}' запущен (PID: 1234).`,
+  };
+}
+
+export async function getServiceStartup(): Promise<StartupItem[]> {
+  if (isTauriEnvironment()) {
+    return await invokeCommand<StartupItem[]>("list_startup_items");
+  }
+
+  return [
+    {
+      id: "HKCU_Run_OneDrive",
+      name: "OneDrive",
+      command: "\"C:\\Users\\User\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe\" /background",
+      source: "registry_run",
+      location: "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+      enabled: true,
+      target_exists: true,
+    },
+    {
+      id: "HKLM_Run_SecurityHealth",
+      name: "SecurityHealth",
+      command: "%windir%\\system32\\SecurityHealthSystray.exe",
+      source: "registry_run",
+      location: "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+      enabled: true,
+      target_exists: true,
+    },
+    {
+      id: "User_Startup_CleanCoreHelper",
+      name: "CleanCoreHelper.lnk",
+      command: "C:\\Users\\User\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\CleanCoreHelper.lnk",
+      source: "startup_folder_user",
+      location: "C:\\Users\\User\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+      enabled: true,
+      target_exists: false,
+    },
+  ];
+}
+
+export async function getServiceAntivirus(): Promise<AntivirusStatus> {
+  if (isTauriEnvironment()) {
+    return await invokeCommand<AntivirusStatus>("get_antivirus_status");
+  }
+
+  return {
+    state: "protected",
+    providers: [
+      {
+        name: "Windows Defender",
+        product_exe: "C:\\Program Files\\Windows Defender\\MsMpEng.exe",
+        reporting_exe: null,
+        state_code: 397568,
+        real_time_protection: true,
+        definitions_up_to_date: true,
+      },
+    ],
+    defender_service_running: true,
+    message: "Защита активна: Windows Defender включен, сигнатуры актуальны.",
+  };
+}
+
+export async function getServiceDiagnostics(): Promise<DiagnosticsSummary> {
+  if (isTauriEnvironment()) {
+    return await invokeCommand<DiagnosticsSummary>("get_system_diagnostics");
+  }
+
+  return {
+    health: "healthy",
+    cpu_usage_percent: 18.5,
+    memory_usage_percent: 54,
+    disk_free_bytes: 48_500_000_000,
+    disk_total_bytes: 256_000_000_000,
+    disk_usage_percent: 81,
+    system_drive: "C:",
+    alerts: [
+      {
+        id: "diag_disk_ok",
+        level: "healthy",
+        category: "disk",
+        title: "Свободное место на системном диске",
+        message: "На диске C: свободно 48.5 ГБ (19%).",
+        recommendation: null,
+      },
+    ],
+    recommendations: [
+      "Система функционирует штатно, критических предупреждений нет.",
+    ],
+    timestamp_utc: new Date().toISOString(),
+  };
+}
+
+export async function launchServiceTool(toolId: SystemToolId): Promise<LaunchResult> {
+  if (isTauriEnvironment()) {
+    return await invokeCommand<LaunchResult>("launch_system_tool", { toolId });
+  }
+
+  return {
+    success: true,
+    pid: 5678,
+    message: `Штатная системная утилита '${toolId}' успешно запущена (PID: 5678).`,
+  };
+}
+
+export async function exportServiceCsv(config: CsvExportConfig): Promise<string> {
+  if (isTauriEnvironment()) {
+    return await invokeCommand<string>("generate_csv_report", { config });
+  }
+
+  return (
+    "\uFEFF\"ОТЧЁТ ЦЕНТРА ОБСЛУЖИВАНИЯ CLEANCORE\"\r\n\"Дата формирования (UTC)\",\"" +
+    new Date().toISOString() +
+    "\"\r\n\r\n\"[РАЗДЕЛ: ДИАГНОСТИКА И ЗДОРОВЬЕ СИСТЕМЫ]\"\r\n\"Общее состояние здоровья\",\"Штатное (Healthy)\"\r\n"
+  );
+}
+
 

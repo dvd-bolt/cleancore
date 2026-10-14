@@ -32,6 +32,13 @@
     "allow-get-duplicate-scan-progress",
     "allow-get-duplicate-report",
     "allow-cancel-disk-task",
-    "allow-get-resource-history"
+    "allow-get-resource-history",
+    "allow-list-installed-programs",
+    "allow-launch-uninstaller",
+    "allow-list-startup-items",
+    "allow-get-antivirus-status",
+    "allow-get-system-diagnostics",
+    "allow-launch-system-tool",
+    "allow-generate-csv-report"
   ]
 }

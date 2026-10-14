@@ -1,6 +1,7 @@
 pub mod cleanup_commands;
 pub mod commands;
 pub mod disk_commands;
+pub mod service_commands;
 pub mod state;
 
 #[cfg(test)]
@@ -45,6 +46,13 @@ pub fn run() {
             disk_commands::get_duplicate_report,
             disk_commands::cancel_disk_task,
             disk_commands::get_resource_history,
+            service_commands::list_installed_programs,
+            service_commands::launch_uninstaller,
+            service_commands::list_startup_items,
+            service_commands::get_antivirus_status,
+            service_commands::get_system_diagnostics,
+            service_commands::launch_system_tool,
+            service_commands::generate_csv_report,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();

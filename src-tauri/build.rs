@@ -34,6 +34,13 @@ fn main() {
             "get_duplicate_report",
             "cancel_disk_task",
             "get_resource_history",
+            "list_installed_programs",
+            "launch_uninstaller",
+            "list_startup_items",
+            "get_antivirus_status",
+            "get_system_diagnostics",
+            "launch_system_tool",
+            "generate_csv_report",
         ]),
     ))
     .expect("failed to build CleanCore permissions");

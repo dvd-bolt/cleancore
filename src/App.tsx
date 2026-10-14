@@ -16,6 +16,7 @@ import { OverviewPage } from "./pages/OverviewPage";
 import { ProcessesPage } from "./pages/ProcessesPage";
 import { DiskPage } from "./pages/DiskPage";
 import { CleanupPage } from "./pages/CleanupPage";
+import { ServicePage } from "./pages/ServicePage";
 import { JournalPage } from "./pages/JournalPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { AlertCircle } from "lucide-react";
@@ -204,6 +205,8 @@ export function App() {
         return <DiskPage />;
       case "cleanup":
         return <CleanupPage />;
+      case "service":
+        return <ServicePage onNavigate={setActivePage} />;
       case "journal":
         return <JournalPage />;
       case "settings":

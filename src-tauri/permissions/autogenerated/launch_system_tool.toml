@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-launch-system-tool"
+description = "Enables the launch_system_tool command without any pre-configured scope."
+commands.allow = ["launch_system_tool"]
+
+[[permission]]
+identifier = "deny-launch-system-tool"
+description = "Denies the launch_system_tool command without any pre-configured scope."
+commands.deny = ["launch_system_tool"]

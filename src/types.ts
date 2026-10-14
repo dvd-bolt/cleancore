@@ -112,7 +112,7 @@ export interface CleanupPreviewPage {
   execution_preview_id: string | null;
 }
 
-export type ActivePage = "overview" | "processes" | "disk" | "cleanup" | "journal" | "settings";
+export type ActivePage = "overview" | "processes" | "disk" | "cleanup" | "service" | "journal" | "settings";
 
 export type FileCategory =
   | "Videos"
@@ -198,4 +198,110 @@ export interface DiskTaskStatus {
   scanned_bytes: number;
   error_message?: string | null;
 }
+
+// --- Stage 6: Service Center («Центр обслуживания») types ---
+
+export interface InstalledProgram {
+  id: string;
+  display_name: string;
+  publisher: string | null;
+  display_version: string | null;
+  install_date: string | null;
+  estimated_size_bytes: number | null;
+  uninstall_string: string | null;
+  quiet_uninstall_string: string | null;
+  install_location: string | null;
+  registry_hive: string;
+  is_wow64: boolean;
+  is_system_component: boolean;
+}
+
+export type StartupSource =
+  | "registry_run"
+  | "registry_run_once"
+  | "startup_folder_user"
+  | "startup_folder_common";
+
+export interface StartupItem {
+  id: string;
+  name: string;
+  command: string;
+  source: StartupSource;
+  location: string;
+  enabled: boolean;
+  target_exists: boolean;
+}
+
+export type ProtectionState =
+  | "protected"
+  | "warning"
+  | "disabled"
+  | "limited_access"
+  | "unknown";
+
+export interface AntivirusProvider {
+  name: string;
+  product_exe: string | null;
+  reporting_exe: string | null;
+  state_code: number | null;
+  real_time_protection: boolean;
+  definitions_up_to_date: boolean;
+}
+
+export interface AntivirusStatus {
+  state: ProtectionState;
+  providers: AntivirusProvider[];
+  defender_service_running: boolean | null;
+  message: string;
+}
+
+export type HealthStatus = "healthy" | "warning" | "critical" | "unknown";
+
+export interface DiagnosticAlert {
+  id: string;
+  level: HealthStatus;
+  category: string;
+  title: string;
+  message: string;
+  recommendation: string | null;
+}
+
+export interface DiagnosticsSummary {
+  health: HealthStatus;
+  cpu_usage_percent: number | null;
+  memory_usage_percent: number | null;
+  disk_free_bytes: number | null;
+  disk_total_bytes: number | null;
+  disk_usage_percent: number | null;
+  system_drive: string;
+  alerts: DiagnosticAlert[];
+  recommendations: string[];
+  timestamp_utc: string;
+}
+
+export type SystemToolId = "cleanmgr" | "dfrgui" | "resmon" | "taskmgr" | "appwiz";
+
+export interface SystemTool {
+  id: SystemToolId;
+  name: string;
+  description: string;
+  executable: string;
+  arguments: string[];
+  is_available: boolean;
+}
+
+export interface LaunchResult {
+  success: boolean;
+  pid: number | null;
+  message: string;
+}
+
+export type CsvExportSection = "programs" | "startup" | "diagnostics" | "all";
+
+export interface CsvExportConfig {
+  sections: CsvExportSection[];
+  include_system_components: boolean;
+  target_path: string | null;
+}
+
 

@@ -9,7 +9,8 @@ import {
   Settings, 
   Pause, 
   Play, 
-  ShieldCheck 
+  ShieldCheck,
+  Wrench
 } from "lucide-react";
 
 interface HeaderProps {
@@ -30,8 +31,9 @@ export const Header: React.FC<HeaderProps> = ({
     { id: "processes", label: "Процессы", num: "02", icon: <Cpu className="w-4 h-4" /> },
     { id: "disk", label: "Диск", num: "03", icon: <HardDrive className="w-4 h-4" /> },
     { id: "cleanup", label: "Очистка", num: "04", icon: <Trash2 className="w-4 h-4" /> },
-    { id: "journal", label: "Журнал", num: "05", icon: <ScrollText className="w-4 h-4" /> },
-    { id: "settings", label: "Настройки", num: "06", icon: <Settings className="w-4 h-4" /> },
+    { id: "service", label: "Сервис", num: "05", icon: <Wrench className="w-4 h-4" /> },
+    { id: "journal", label: "Журнал", num: "06", icon: <ScrollText className="w-4 h-4" /> },
+    { id: "settings", label: "Настройки", num: "07", icon: <Settings className="w-4 h-4" /> },
   ];
 
   return (
