@@ -7,14 +7,14 @@ export interface ExecutionPreview {
 }
 export interface CleanupConfirmation {
   confirmation_id: string; preview_id: string; expires_at_ms: number;
-  selected: ExecutionCandidate[]; selected_bytes: string; consequences: string;
+  selected: ExecutionCandidate[]; selected_bytes: string; consequences: string; irreversible?: boolean;
 }
-export type ItemStatus = "Pending" | "Recycled" | "Skipped" | "Failed" | "Cancelled" | "Unknown";
+export type ItemStatus = "Pending" | "Recycled" | "Deleted" | "Skipped" | "Failed" | "Cancelled" | "Unknown";
 export type OperationStatus = "Running" | "Completed" | "Cancelled" | "Interrupted" | "JournalFailed";
 export interface CleanupOutcome {
   operation_id: string; preview_id: string; category: string; started_at_ms: number;
   status: OperationStatus; items: Array<Omit<ExecutionCandidate, "reason"> & { status: ItemStatus; reason_code: string }>;
-  recycled_bytes: string; journal_ok: boolean;
+  recycled_bytes: string; deleted_bytes?: string; journal_ok: boolean;
 }
 export interface CleanupAvailability {
   execution_enabled: boolean; persistent_journal: boolean; reason: string;

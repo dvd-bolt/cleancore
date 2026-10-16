@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "CleanCore",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "identifier": "com.cleancore.app",
   "build": {
-    "beforeDevCommand": "npx pnpm dev",
+    "beforeDevCommand": "pnpm dev",
     "devUrl": "http://127.0.0.1:5173",
-    "beforeBuildCommand": "npx pnpm build",
+    "beforeBuildCommand": "python scripts/prepare_bundle.py",
     "frontendDist": "../dist"
   },
   "app": {
@@ -29,6 +29,30 @@
     }
   },
   "bundle": {
-    "active": false
+    "active": false,
+    "targets": [
+      "nsis"
+    ],
+    "category": "Utility",
+    "shortDescription": "Р›РѕРєР°Р»СЊРЅС‹Р№ РјРѕРЅРёС‚РѕСЂ Рё Р±РµР·РѕРїР°СЃРЅС‹Р№ Р°РЅР°Р»РёР· Windows",
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "offlineInstaller",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "Russian",
+          "English"
+        ],
+        "displayLanguageSelector": true,
+        "compression": "zlib"
+      }
+    }
   }
 }

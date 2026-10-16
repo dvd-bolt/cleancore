@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-launch-uninstaller-with-residue-context"
+description = "Enables the launch_uninstaller_with_residue_context command without any pre-configured scope."
+commands.allow = ["launch_uninstaller_with_residue_context"]
+
+[[permission]]
+identifier = "deny-launch-uninstaller-with-residue-context"
+description = "Denies the launch_uninstaller_with_residue_context command without any pre-configured scope."
+commands.deny = ["launch_uninstaller_with_residue_context"]

@@ -23,9 +23,15 @@ describe("explicit cleanup confirmation", () => {
 });
 describe("honest outcome states", () => {
   it("distinguishes all per-object outcomes and warns about uncertain journal", () => {
-    const states: ItemStatus[]=["Pending","Recycled","Skipped","Failed","Cancelled","Unknown"];
+    const states: ItemStatus[]=["Pending","Recycled","Deleted","Skipped","Failed","Cancelled","Unknown"];
     const o: CleanupOutcome={operation_id:"operation",preview_id:"preview",category:"user-temp-v1",started_at_ms:1,status:"JournalFailed",journal_ok:false,recycled_bytes:"42",items:states.map((status,i)=>({object_id:String(i),display_path:`test-${i}.tmp`,size_bytes:"42",status,reason_code:"test"}))};
     const html=renderToStaticMarkup(<OutcomeView outcome={o}/>);
     for(const label of ["Ожидает","В Корзине","Пропущен","Ошибка","Отменён","Исход неизвестен","Сбой журнала","не освобождённое место","не полностью записан"]) expect(html).toContain(label);
   });
+});
+
+it("requires explicit permanent deletion acknowledgement and names the irreversible action",()=>{
+  const html=renderToStaticMarkup(<ConfirmationReview confirmation={{...confirmation,irreversible:true}} acknowledged={false} allowed busy={false} expired={false} onAcknowledge={vi.fn()} onExecute={vi.fn()} onBack={vi.fn()}/>);
+  expect(html).toContain("безвозвратно, без Корзины и восстановления");
+  expect(html).toMatch(/<button disabled=""[^>]*>Удалить выбранное безвозвратно/);
 });

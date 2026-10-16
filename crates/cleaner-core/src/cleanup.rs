@@ -27,12 +27,15 @@ pub struct CleanupConfirmation {
     pub selected: Vec<CleanupCandidate>,
     pub selected_bytes: String,
     pub consequences: String,
+    #[serde(default)]
+    pub irreversible: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CleanupItemStatus {
     Pending,
     Recycled,
+    Deleted,
     Skipped,
     Failed,
     Cancelled,
@@ -67,6 +70,8 @@ pub struct CleanupOutcome {
     pub items: Vec<CleanupItemResult>,
     /// Bytes sent to Recycle Bin, not actual free disk space.
     pub recycled_bytes: String,
+    #[serde(default = "zero_bytes")]
+    pub deleted_bytes: String,
     pub journal_ok: bool,
 }
 
@@ -90,4 +95,8 @@ pub trait CleanupJournal: Send + Sync {
     fn begin(&self, operation: &CleanupOutcome) -> Result<(), String>;
     fn update(&self, operation: &CleanupOutcome) -> Result<(), String>;
     fn read(&self, operation_id: &str) -> Result<Option<CleanupOutcome>, String>;
+}
+
+fn zero_bytes() -> String {
+    "0".into()
 }

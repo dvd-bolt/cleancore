@@ -27,6 +27,8 @@ pub struct SystemCollector {
     process_baselines: HashMap<u32, (u64, Instant)>,
     last_disk_refresh: Option<Instant>,
     cached_disk_metrics: FieldValue<DiskMetrics>,
+    disk_volumes: Vec<FieldValue<DiskMetrics>>,
+    network_interfaces: Vec<FieldValue<NetworkMetrics>>,
     prev_network_samples: HashMap<String, NetworkSample>,
     last_network_instant: Option<Instant>,
 }
@@ -63,6 +65,8 @@ impl SystemCollector {
             process_baselines: HashMap::new(),
             last_disk_refresh: None,
             cached_disk_metrics: FieldValue::NotMeasured,
+            disk_volumes: Vec::new(),
+            network_interfaces: Vec::new(),
             prev_network_samples: HashMap::new(),
             last_network_instant: None,
         }
@@ -125,13 +129,18 @@ impl SystemCollector {
         // Формирование снимка с отметкой времени в UTC
         let now_utc = chrono_or_simple_utc_now();
 
+        let power_status = crate::power::read_power_status();
+
         MetricSnapshot {
+            disks: self.disk_volumes.clone(),
+            network_interfaces: self.network_interfaces.clone(),
             timestamp_utc: now_utc,
             interval_ms,
             cpu: cpu_metric,
             memory: memory_metric,
             disk: disk_metric,
             network: network_metric,
+            power: power_status,
         }
     }
 
@@ -146,6 +155,29 @@ impl SystemCollector {
         if should_refresh {
             self.disks.refresh(true);
             self.last_disk_refresh = Some(now);
+            self.disk_volumes = self
+                .disks
+                .iter()
+                .map(|disk| {
+                    let total = disk.total_space();
+                    if total == 0 {
+                        return FieldValue::Unavailable(format!(
+                            "{}: объём недоступен",
+                            disk.mount_point().display()
+                        ));
+                    }
+                    FieldValue::Available(DiskMetrics {
+                        mount_point: disk.mount_point().to_string_lossy().into_owned(),
+                        total_bytes: total,
+                        free_bytes: disk.available_space(),
+                        usage_percent: ((total.saturating_sub(disk.available_space()) as f64
+                            / total as f64)
+                            * 100.0)
+                            .round()
+                            .min(100.0) as u8,
+                    })
+                })
+                .collect();
 
             // Ищем основной системный диск (обычно 'C:' на Windows) или первый доступный диск с ненулевым объёмом
             let primary_disk = self
@@ -184,7 +216,8 @@ impl SystemCollector {
                 self.cached_disk_metrics =
                     FieldValue::Unavailable("Локальные накопители не обнаружены".to_string());
             } else {
-                self.cached_disk_metrics = FieldValue::AccessDenied;
+                self.cached_disk_metrics =
+                    FieldValue::Unavailable("Объёмы накопителей недоступны".into());
             }
         }
 
@@ -195,6 +228,7 @@ impl SystemCollector {
     fn collect_network_metrics(&mut self) -> FieldValue<NetworkMetrics> {
         let now = Instant::now();
         self.networks.refresh(true);
+        self.network_interfaces.clear();
         self.prev_network_samples
             .retain(|name, _| self.networks.iter().any(|(current, _)| current == name));
         if self.networks.is_empty() {
@@ -251,9 +285,16 @@ impl SystemCollector {
                 prev.total_rx_bytes = current_rx;
                 prev.total_tx_bytes = current_tx;
                 let Some((rx_speed, tx_speed)) = rates else {
+                    self.network_interfaces.push(FieldValue::NotMeasured);
                     continue;
                 };
 
+                self.network_interfaces
+                    .push(FieldValue::Available(NetworkMetrics {
+                        rx_bytes_per_sec: rx_speed,
+                        tx_bytes_per_sec: tx_speed,
+                        interface_name: Some(iface_name.clone()),
+                    }));
                 sum_rx_speed = sum_rx_speed.saturating_add(rx_speed);
                 sum_tx_speed = sum_tx_speed.saturating_add(tx_speed);
 

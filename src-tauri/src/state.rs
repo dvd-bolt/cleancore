@@ -20,7 +20,10 @@ pub struct AppState {
     pub interval_ms: AtomicU64,
     pub settings_change: Mutex<()>,
     pub cleanup: Arc<cleaner_execution::CleanupService>,
+    pub cleanup_preferences: cleaner_execution::preferences::SharedPreferences,
+    pub residue_manager: Arc<cleaner_service::residue::ResidueManager>,
     pub shutdown: AtomicBool,
+    pub assistant: Arc<cleaner_assistant::Assistant>,
 }
 
 impl Default for AppState {
@@ -49,14 +52,20 @@ impl Default for AppState {
 
         let initial_settings = settings.get_settings();
 
+        let cleanup_preferences = Arc::new(std::sync::RwLock::new(
+            storage.load_cleanup_preferences().ok(),
+        ));
         let cleanup = Arc::new(cleaner_execution::CleanupService::new(
             storage.clone(),
-            Arc::new(cleaner_execution::native::DisabledRecycle),
+            Arc::new(cleaner_execution::preferences::PreferenceDelete {
+                preferences: cleanup_preferences.clone(),
+            }),
         ));
+        let disk_manager = Arc::new(DiskManager::with_hash_cache(storage.clone()));
         Self {
             app_info: Mutex::new(AppInfo {
                 name: "CleanCore".to_string(),
-                version: "0.0.3".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
                 is_local_mode: true,
                 is_admin: cleaner_system::privileges::is_elevated(),
                 settings_persistent: storage.is_persistent() && settings.is_persistent(),
@@ -66,12 +75,15 @@ impl Default for AppState {
             storage,
             settings,
             task_manager: Arc::new(TaskManager::with_execution(cleanup.clone())),
-            disk_manager: Arc::new(DiskManager::new()),
+            disk_manager,
             is_paused: AtomicBool::new(initial_settings.is_monitoring_paused),
             interval_ms: AtomicU64::new(initial_settings.refresh_interval_ms),
             settings_change: Mutex::new(()),
             cleanup,
+            cleanup_preferences,
+            residue_manager: Arc::new(cleaner_service::residue::ResidueManager::default()),
             shutdown: AtomicBool::new(false),
+            assistant: Arc::new(cleaner_assistant::Assistant::default()),
         }
     }
 }

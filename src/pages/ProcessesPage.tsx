@@ -20,6 +20,7 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({
   const [searchTerm, setSearchTerm] = useState("");
   const [sortField, setSortField] = useState<SortField>("cpu");
   const [sortDesc, setSortDesc] = useState(true);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>("");
 
   const loadProcesses = async () => {
@@ -157,6 +158,8 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({
         </div>
       </div>
 
+      {error && processes.length > 0 && <p role="alert" className="text-sm text-warn">Обновить список не удалось: {error}. Показаны последние полученные данные.</p>}
+      {copyMessage && <p role="status" className="text-xs text-muted">{copyMessage}</p>}
       {/* Table Container */}
       <div className="bg-surface border border-line rounded-xl overflow-hidden shadow-sm">
         {/* Table Head */}
@@ -165,7 +168,7 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({
             onClick={() => handleSort("name")}
             className="col-span-5 flex items-center gap-1.5 font-medium hover:text-txt text-left transition-colors cursor-pointer"
           >
-            <span>ПРОЦЕСС</span>
+            <span>ПРОЦЕСС {sortField === "name" ? (sortDesc ? "↓" : "↑") : ""}</span>
             <ArrowUpDown className="w-3 h-3" />
           </button>
 
@@ -173,7 +176,7 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({
             onClick={() => handleSort("pid")}
             className="col-span-2 flex items-center justify-end gap-1 font-medium hover:text-txt text-right transition-colors cursor-pointer"
           >
-            <span>PID</span>
+            <span>PID {sortField === "pid" ? (sortDesc ? "↓" : "↑") : ""}</span>
             <ArrowUpDown className="w-3 h-3" />
           </button>
 
@@ -181,7 +184,7 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({
             onClick={() => handleSort("cpu")}
             className="col-span-2 flex items-center justify-end gap-1 font-medium hover:text-txt text-right transition-colors cursor-pointer"
           >
-            <span>CPU %</span>
+            <span>CPU % {sortField === "cpu" ? (sortDesc ? "↓" : "↑") : ""}</span>
             <ArrowUpDown className="w-3 h-3 text-accent" />
           </button>
 
@@ -189,7 +192,7 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({
             onClick={() => handleSort("memory")}
             className="col-span-3 flex items-center justify-end gap-1 font-medium hover:text-txt text-right transition-colors cursor-pointer"
           >
-            <span>ПАМЯТЬ</span>
+            <span>ПАМЯТЬ {sortField === "memory" ? (sortDesc ? "↓" : "↑") : ""}</span>
             <ArrowUpDown className="w-3 h-3" />
           </button>
         </div>
@@ -200,7 +203,7 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({
             <div className="w-8 h-8 border-2 border-line border-t-accent rounded-full animate-spin mb-3" />
             <span className="text-xs font-mono text-muted">Чтение списка процессов...</span>
           </div>
-        ) : error ? (
+        ) : error && !processes.length ? (
           <div className="py-16 flex flex-col items-center justify-center text-center px-4">
             <div className="w-10 h-10 rounded-full bg-red-950/40 border border-red-700/50 flex items-center justify-center text-red-400 mb-2">
               <ShieldAlert className="w-5 h-5" />
@@ -247,12 +250,12 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({
                       {proc.executable_path.status === "Available" && proc.executable_path.value ? (
                         <>
                           <Folder className="w-2.5 h-2.5 flex-shrink-0 text-dim" />
-                          <span
-                            className="truncate text-muted hover:text-txt"
-                            title={proc.executable_path.value}
+                          <button type="button" aria-label={`Копировать путь процесса ${proc.name}`} onClick={() => { void navigator.clipboard.writeText(proc.executable_path.value!).then(() => setCopyMessage("Путь скопирован")).catch(() => setCopyMessage("Не удалось скопировать путь")); }}
+                            className="truncate text-left text-muted hover:text-txt"
+                            title={`Копировать путь: ${proc.executable_path.value}`}
                           >
                             {proc.executable_path.value}
-                          </span>
+                          </button>
                         </>
                       ) : proc.executable_path.status === "AccessDenied" ? (
                         <span className="text-amber-400/80 bg-amber-950/30 px-1 rounded text-[9px] border border-amber-800/40">
@@ -302,9 +305,9 @@ export const ProcessesPage: React.FC<ProcessesPageProps> = ({
       {/* Safety Note */}
       <div className="p-4 rounded-xl bg-shell/60 border border-line text-xs text-muted flex items-center justify-between">
         <span>
-          🛡️ CleanCore отображает данные строго в пространстве непривилегированного пользователя Windows.
+          Только просмотр процессов. Системные ограничения доступа отображаются в таблице.
         </span>
-        <span className="text-dim font-mono text-[11px]">Read-Only Monitoring</span>
+        <span className="text-dim font-mono text-[11px]">Без изменений системы</span>
       </div>
     </div>
   );

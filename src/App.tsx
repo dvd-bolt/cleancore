@@ -19,6 +19,7 @@ import { CleanupPage } from "./pages/CleanupPage";
 import { ServicePage } from "./pages/ServicePage";
 import { JournalPage } from "./pages/JournalPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { AssistantPage } from "./pages/AssistantPage";
 import { AlertCircle } from "lucide-react";
 
 export function App() {
@@ -32,6 +33,7 @@ export function App() {
   const [processes, setProcesses] = useState<ProcessItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [monitoringError, setMonitoringError] = useState<string | null>(null);
 
   // Инициализация данных при старте
   useEffect(() => {
@@ -89,7 +91,7 @@ export function App() {
       else unsubscribe = stop;
     }
 
-    subscribe().catch((err) => { if (!disposed) setError(err instanceof Error ? err.message : String(err)); });
+    subscribe().catch((err) => { if (!disposed) setMonitoringError(err instanceof Error ? err.message : String(err)); });
 
     return () => {
       disposed = true;
@@ -110,9 +112,9 @@ export function App() {
       pending = true;
       try {
         const snapshot = await fetchProcessList();
-        if (!disposed) setProcesses(snapshot.processes);
+        if (!disposed) { setProcesses(snapshot.processes); setMonitoringError(null); }
       } catch (e) {
-        if (!disposed) setError(e instanceof Error ? e.message : String(e));
+        if (!disposed) setMonitoringError(e instanceof Error ? e.message : String(e));
       } finally { pending = false; }
     }, 10000);
 
@@ -131,7 +133,7 @@ export function App() {
         setSettings({ ...settings, is_monitoring_paused: nextPaused });
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setMonitoringError(e instanceof Error ? e.message : String(e));
     } finally { pausePending.current = false; }
   };
 
@@ -157,7 +159,7 @@ export function App() {
       return (
         <div className="h-full flex flex-col items-center justify-center p-8 text-center text-muted">
           <div className="w-8 h-8 border-2 border-line border-t-accent rounded-full animate-spin mb-3" />
-          <span className="text-xs font-mono">Инициализация CleanCore v0.0.2...</span>
+          <span className="text-xs font-mono">Инициализация CleanCore...</span>
         </div>
       );
     }
@@ -204,11 +206,13 @@ export function App() {
       case "disk":
         return <DiskPage />;
       case "cleanup":
-        return <CleanupPage />;
+        return <CleanupPage onNavigate={setActivePage} />;
       case "service":
         return <ServicePage onNavigate={setActivePage} />;
       case "journal":
         return <JournalPage />;
+      case "assistant":
+        return <AssistantPage onNavigate={setActivePage} />;
       case "settings":
         return (
           <SettingsPage
@@ -224,19 +228,22 @@ export function App() {
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-bg text-txt select-none">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-surface focus:p-3">Перейти к содержимому</a>
       {/* Top Header */}
       <Header
         activePage={activePage}
         onPageChange={setActivePage}
         isPaused={isPaused}
         onTogglePause={handleTogglePause}
+        power={metrics?.power}
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto px-8 py-6">
+      <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
         <div className="max-w-7xl mx-auto">
           {!isTauriEnvironment() && <p role="status" className="text-xs text-muted mb-4">Предпросмотр интерфейса в браузере: системный backend и SQLite не подключены.</p>}
-          {appInfo && isTauriEnvironment() && !appInfo.settings_persistent && <p role="alert" className="text-sm text-warn mb-4">Постоянная SQLite недоступна: настройки действуют только в памяти, исполнение очистки заблокировано.</p>}
+          {appInfo && isTauriEnvironment() && !appInfo.settings_persistent && <p role="alert" className="text-sm text-warn mb-4">Постоянное хранилище или настройки недоступны. Часть данных действует только в памяти; проверьте раздел настроек.</p>}
+          {monitoringError && <div role="alert" className="mb-4 rounded-xl border border-amber-400/40 bg-amber-950/30 p-3 text-sm text-warn flex flex-wrap items-center justify-between gap-3"><p>Мониторинг: {monitoringError}. Показаны последние полученные данные.</p><button onClick={() => setMonitoringError(null)} className="shrink-0 border border-line rounded-lg px-3 py-1 text-xs">Скрыть уведомление</button></div>}
           {renderContent()}
         </div>
       </main>

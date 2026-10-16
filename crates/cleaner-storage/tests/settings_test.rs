@@ -94,3 +94,48 @@ fn test_settings_validation_and_clamping() {
 
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
 }
+
+#[test]
+fn concurrent_saves_keep_disk_and_memory_in_agreement() {
+    let path = temp_path("settings_concurrent.json");
+    let manager = std::sync::Arc::new(SettingsManager::open(&path).unwrap());
+    let threads: Vec<_> = (0..8)
+        .map(|index| {
+            let manager = manager.clone();
+            std::thread::spawn(move || {
+                for iteration in 0..20 {
+                    manager
+                        .save_settings(&AppSettings {
+                            refresh_interval_ms: 500 + index * 100 + iteration,
+                            ..AppSettings::default()
+                        })
+                        .unwrap();
+                }
+            })
+        })
+        .collect();
+    for thread in threads {
+        thread.join().unwrap();
+    }
+    let on_disk = SettingsManager::open(&path).unwrap().get_settings();
+    assert_eq!(on_disk, manager.get_settings());
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn failed_write_preserves_current_settings() {
+    let path = temp_path("settings_failure.json");
+    let manager = SettingsManager::open(&path).unwrap();
+    let before = manager.get_settings();
+    // Replace only this test fixture with a directory to force atomic replacement failure.
+    std::fs::remove_file(&path).unwrap();
+    std::fs::create_dir(&path).unwrap();
+    assert!(manager
+        .save_settings(&AppSettings {
+            refresh_interval_ms: 10000,
+            ..before.clone()
+        })
+        .is_err());
+    assert_eq!(manager.get_settings(), before);
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}

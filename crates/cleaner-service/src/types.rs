@@ -292,6 +292,38 @@ impl From<ServiceError> for ApiError {
     }
 }
 
+/// Информация о состоянии Корзины Windows (OPT-04).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecycleBinInfo {
+    pub total_bytes: u64,
+    pub item_count: u64,
+}
+
+/// Запись о заброшенном кэше разработчика или виртуальном диске (OPT-04).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevCacheEntry {
+    pub path: String,
+    pub name: String,
+    pub kind: String,
+    pub size_bytes: u64,
+    pub last_modified_utc: String,
+    pub inactive_days: u32,
+}
+
+/// Сводка по кэшам разработчика (OPT-04).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevCacheSummary {
+    pub total_bytes: u64,
+    pub node_modules_count: usize,
+    pub node_modules_bytes: u64,
+    pub target_count: usize,
+    pub target_bytes: u64,
+    pub venv_count: usize,
+    pub venv_bytes: u64,
+    pub wsl_docker_bytes: u64,
+    pub entries: Vec<DevCacheEntry>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

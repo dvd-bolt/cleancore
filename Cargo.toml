@@ -8,11 +8,12 @@ members = [
     "crates/cleaner-execution",
     "crates/cleaner-disk",
     "crates/cleaner-service",
+    "crates/cleaner-assistant",
     "src-tauri",
 ]
 
 [workspace.package]
-version = "0.0.3"
+version = "0.0.4"
 edition = "2021"
 authors = ["CleanCore contributors"]
 license = "MIT"

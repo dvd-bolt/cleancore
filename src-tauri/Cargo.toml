@@ -11,6 +11,9 @@ description = "CleanCore Windows Desktop Application Shell"
 name = "cleancore_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }
 
@@ -23,6 +26,7 @@ cleaner-execution = { path = "../crates/cleaner-execution" }
 cleaner-cleanup = { path = "../crates/cleaner-cleanup" }
 cleaner-disk = { path = "../crates/cleaner-disk" }
 cleaner-service = { path = "../crates/cleaner-service" }
+cleaner-assistant = { path = "../crates/cleaner-assistant" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -30,3 +34,6 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tauri = { version = "2.0", features = ["test"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_Controls_Dialogs", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_System_Com"] }

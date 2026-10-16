@@ -9,6 +9,7 @@ description = "CleanCore Service Center: Software Inventory, Startup, Defender S
 
 [dependencies]
 cleaner-core = { path = "../cleaner-core" }
+cleaner-execution = { path = "../cleaner-execution" }
 cleaner-system = { path = "../cleaner-system" }
 serde = { workspace = true }
 serde_json = { workspace = true }

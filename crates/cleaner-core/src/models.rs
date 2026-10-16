@@ -80,6 +80,10 @@ pub struct NetworkMetrics {
 /// Полный снимок системных показателей в момент времени.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MetricSnapshot {
+    #[serde(default)]
+    pub disks: Vec<FieldValue<DiskMetrics>>,
+    #[serde(default)]
+    pub network_interfaces: Vec<FieldValue<NetworkMetrics>>,
     /// Время формирования снимка в формате ISO 8601 UTC.
     pub timestamp_utc: String,
     /// Интервал измерения в миллисекундах.
@@ -92,6 +96,19 @@ pub struct MetricSnapshot {
     pub disk: FieldValue<DiskMetrics>,
     /// Данные сети.
     pub network: FieldValue<NetworkMetrics>,
+    /// Показатели питания и аккумулятора (OPT-01).
+    #[serde(default)]
+    pub power: Option<PowerStatusSnapshot>,
+}
+
+/// Показатели питания и состояния аккумулятора устройства (OPT-01).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct PowerStatusSnapshot {
+    pub is_battery_present: bool,
+    pub is_ac_connected: bool,
+    pub battery_percent: Option<f64>,
+    pub is_charging: bool,
+    pub power_save_active: bool,
 }
 
 /// Сведения об одном запущенном процессе.
@@ -210,4 +227,57 @@ pub struct CleanupPreviewPage {
     pub cancelled: bool,
     pub diagnostics: std::collections::BTreeMap<String, u64>,
     pub execution_preview_id: Option<String>,
+    #[serde(default)]
+    pub resumable: bool,
+    #[serde(default)]
+    pub batch_ready: bool,
+}
+
+/// Категория крупного файла (OPT-02).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LargeFileCategory {
+    DiskImage,
+    Archive,
+    Video,
+    Installer,
+    VirtualDisk,
+    Other,
+}
+
+impl LargeFileCategory {
+    pub fn classify_extension(ext: &str) -> Self {
+        match ext.to_ascii_lowercase().as_str() {
+            "iso" | "img" | "vdi" | "vmdk" | "qcow2" => LargeFileCategory::DiskImage,
+            "vhd" | "vhdx" => LargeFileCategory::VirtualDisk,
+            "zip" | "7z" | "rar" | "tar" | "gz" | "bz2" | "xz" | "zst" | "bak" | "backup" => {
+                LargeFileCategory::Archive
+            }
+            "mkv" | "mp4" | "mov" | "avi" | "wmv" | "flv" | "webm" => LargeFileCategory::Video,
+            "exe" | "msi" => LargeFileCategory::Installer,
+            _ => LargeFileCategory::Other,
+        }
+    }
+}
+
+/// Элемент выборки крупных файлов (OPT-02).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LargeFileEntry {
+    pub id: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub allocated_bytes: u64,
+    pub category: LargeFileCategory,
+    pub extension: String,
+    pub is_system_locked: bool,
+}
+
+/// Элемент выборки «забытых» / устаревших файлов (OPT-03).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StaleFileEntry {
+    pub path: String,
+    pub name: String,
+    pub size_bytes: u64,
+    pub last_modified_utc: String,
+    pub days_old: u32,
+    pub extension: String,
 }

@@ -1,6 +1,6 @@
 # Архитектура CleanCore
 
-Статус: проект архитектуры, код ещё не реализован. Этапы определяет [ROADMAP](ROADMAP.md); требования безопасности — [ТЗ](../TECHNICAL_SPEC.md).
+Статус: архитектура реализуемого приложения; незавершённые критерии — в STATUS. Этапы определяет [ROADMAP](ROADMAP.md); требования безопасности — [ТЗ](../TECHNICAL_SPEC.md).
 
 ## Границы
 
@@ -63,9 +63,39 @@ flowchart TD
 
 Для разделения записи файлов добавлен `cleaner-execution`: он зависит только от `cleaner-core`, владеет preview/confirmations/operations и получает CleanupJournal/ObjectAction через traits. `cleaner-storage` реализует журнал, Tauri собирает сервис. Будущий Rust-сканер может зависеть от `cleaner-execution` без обратной зависимости и циклов. Этот модуль является частью cleanup домена; вынесение связано с параллельной работой, не с отдельным сервисом.
 
-Production ObjectAction сейчас DisabledRecycle. Read-only проверка не выдаёт право на последующее удаление по пути. Деструктивного адаптера нет; его включение — отдельная обязательная приёмка 4.3.
+Production ObjectAction — BoundDelete для отдельно подтверждаемого безвозвратного режима; DisabledRecycle остаётся недопущенным адаптером Корзины. [Решение 005](decisions/005-bound-temp-deletion.md). Read-only проверка не выдаёт право на последующее удаление по пути.
 
 
 ## Композиция этапов 1–4 после объединения
 
 TaskManager получает Arc<CleanupService> из AppState. Сканер захватывает TrustedCandidate вместе с метаданными; только полный ограниченный набор публикуется в execution. Scan и execution DTO используют одинаковые object IDs; UI передаёт ID, не пути. DirectoryLease удерживает родителей при read_dir. Пагинация и поиск выполняются в backend. Потоки останавливаются флагом shutdown/cancel при выходе. Production DisabledRecycle не допускает мутацию. [Контракты](API_CONTRACTS.md), [отчёт](reports/STAGES1_4.md).
+
+## Аудит этапов 1–7
+
+cleaner-disk использует Rust-only BoundReader/DirectoryLease из cleaner-execution для
+read-only удержания объектов и родителей. Эти интерфейсы не предоставляют удаление.
+cleaner-service отвечает за инвентаризацию и фиксированные инструменты Windows.
+Экспорт Tauri выбирает путь только через нативный диалог; произвольные webview-пути не записываются.
+settings.json — основной источник настроек, SQLite хранит журнал и legacy-копию.
+Решение и пределы выпуска: [003](decisions/003-release-candidate.md), [RELEASE](RELEASE.md).
+
+## Локальный помощник
+
+cleaner-assistant зависит от read-only BoundReader из cleaner-execution, но не получает
+CleanupService, StorageManager или полномочий изменения системы. assistant_commands
+собирает выбранные агрегаты в backend; AssistantPage показывает их перед вопросом.
+Отдельный CPU-процесс получает одну сводку по stdin и возвращает ограниченный текст.
+Ресурсы и угрозы: [решение 004](decisions/004-local-assistant.md).
+
+## Исполнитель после пользовательских исправлений
+
+AppState теперь подключает BoundDelete для явно названного безвозвратного режима.
+DisabledRecycle остаётся недопущенным адаптером Корзины. В отличие от pathname удаления,
+BoundDelete проверяет и удаляет один удерживаемый эксклюзивный file handle, удерживая
+предков. [Решение 005](decisions/005-bound-temp-deletion.md) заменяет прежний статус
+production DisabledRecycle. Автозагрузка получает отдельную узкую HKCU команду,
+не универсальный доступ к реестру.
+
+## NTFS MFT и повышение прав
+
+По решению [006](decisions/006-elevated-mft-analysis.md) основной процесс требует UAC. cleaner-disk/ntfs читает raw NTFS metadata, строит один индекс и отчёты подпапок. Этот путь не использует DirectoryLease очистки и не выдаёт полномочия удаления. Обычный обход и дубликаты сохраняют отдельные проверки.

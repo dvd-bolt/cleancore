@@ -2,6 +2,50 @@
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TreemapSize {
+    Logical,
+    Allocated,
+}
+impl TreemapSize {
+    pub fn bytes(self, logical: u64, allocated: u64) -> u64 {
+        match self {
+            Self::Logical => logical,
+            Self::Allocated => allocated,
+        }
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TreemapNode {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub logical_bytes: u64,
+    pub allocated_bytes: Option<u64>,
+    pub is_dir: bool,
+    pub is_aggregate: bool,
+    pub file_count: u64,
+    pub extension: String,
+    pub children: Vec<TreemapNode>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TreemapExtension {
+    pub extension: String,
+    pub bytes: u64,
+    pub files: u64,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TreemapData {
+    pub root: TreemapNode,
+    pub extensions: Vec<TreemapExtension>,
+    pub empty_files: Vec<TreemapNode>,
+    pub empty_file_count: u64,
+    pub parent_path: Option<String>,
+    pub indexed: bool,
+}
+
 /// Категории файлов для построения карты распределения дискового пространства.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FileCategory {
@@ -85,6 +129,20 @@ pub struct DiskAnalysisReport {
     pub largest_files: Vec<DiskEntry>,
     pub largest_dirs: Vec<DiskEntry>,
     pub subdirs: Vec<DiskEntry>,
+    pub complete: bool,
+    pub diagnostics: std::collections::BTreeMap<String, u64>,
+    #[serde(default)]
+    pub engine: String,
+    #[serde(default)]
+    pub engine_note: Option<String>,
+    #[serde(default)]
+    pub elapsed_ms: u64,
+    #[serde(default)]
+    pub allocated_bytes: Option<u64>,
+    #[serde(default)]
+    pub volume_used_bytes: Option<u64>,
+    #[serde(default)]
+    pub warnings: std::collections::BTreeMap<String, u64>,
 }
 
 /// Экземпляр файла в группе дубликатов.
@@ -95,7 +153,7 @@ pub struct DuplicateFileEntry {
     pub size_bytes: u64,
 }
 
-/// Группа доказанных дубликатов (одинаковый точный размер и полный криптографический хеш).
+/// Совпадения размера и полного хеша, включая кеш анализа; не разрешение удаления.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DuplicateGroup {
     pub group_id: String,
@@ -113,6 +171,8 @@ pub struct DuplicateScanResult {
     pub groups: Vec<DuplicateGroup>,
     pub total_wasted_bytes: u64,
     pub total_duplicate_files: usize,
+    #[serde(default)]
+    pub cached_hashes: u64,
 }
 
 /// Стандартный каталог Windows для быстрого выбора пользователем.
@@ -127,8 +187,10 @@ pub struct QuickDirectory {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResourceHistory {
     pub timestamps_utc: Vec<String>,
-    pub cpu_percentages: Vec<f32>,
-    pub memory_percentages: Vec<f32>,
-    pub network_rx_bytes_sec: Vec<u64>,
-    pub network_tx_bytes_sec: Vec<u64>,
+    pub cpu_percentages: Vec<Option<f32>>,
+    pub memory_percentages: Vec<Option<f32>>,
+    pub network_rx_bytes_sec: Vec<Option<u64>>,
+    pub network_tx_bytes_sec: Vec<Option<u64>>,
 }
+
+pub use cleaner_core::models::{LargeFileCategory, LargeFileEntry, StaleFileEntry};

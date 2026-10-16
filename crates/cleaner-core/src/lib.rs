@@ -2,6 +2,8 @@
 //! Общие модели, типизированные ошибки, правила безопасности путей и события.
 
 pub mod cleanup;
+pub mod cleanup_preferences;
+pub mod duplicate_cache;
 pub mod errors;
 pub mod events;
 pub mod models;
@@ -24,6 +26,8 @@ mod tests {
     #[test]
     fn test_dto_serialization_roundtrip() {
         let snapshot = MetricSnapshot {
+            disks: Vec::new(),
+            network_interfaces: Vec::new(),
             timestamp_utc: "2026-10-14T03:00:00Z".to_string(),
             interval_ms: 2000,
             cpu: FieldValue::Available(CpuMetrics {
@@ -47,6 +51,7 @@ mod tests {
                 tx_bytes_per_sec: 1024 * 20,
                 interface_name: Some("Ethernet".to_string()),
             }),
+            power: None,
         };
 
         let json = serde_json::to_string(&snapshot).expect("Serialize snapshot");

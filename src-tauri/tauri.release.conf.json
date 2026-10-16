@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "active": true,
+    "resources": {
+      "../artifacts/legal/": "legal/",
+      "../LICENSE": "LICENSE",
+      "../runtime/llama-b11429/": "runtime/llama-b11429/"
+    },
+    "licenseFile": "../LICENSE"
+  }
+}

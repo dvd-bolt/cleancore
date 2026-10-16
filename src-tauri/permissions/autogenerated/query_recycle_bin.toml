@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-query-recycle-bin"
+description = "Enables the query_recycle_bin command without any pre-configured scope."
+commands.allow = ["query_recycle_bin"]
+
+[[permission]]
+identifier = "deny-query-recycle-bin"
+description = "Denies the query_recycle_bin command without any pre-configured scope."
+commands.deny = ["query_recycle_bin"]

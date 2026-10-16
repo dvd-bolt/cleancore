@@ -8,6 +8,10 @@ export const scanReasons: Record<string,string> = {
   TYPE_UNAVAILABLE: "Тип объекта недоступен", NOT_REGULAR_FILE: "Не обычный файл",
   WRONG_OBJECT_TYPE: "Изменился тип объекта", INSPECTION_FAILED: "Не удалось проверить объект",
   IDENTITY_UNAVAILABLE: "Идентичность объекта недоступна", TIME_UNAVAILABLE: "Время изменения недоступно",
+  EXTENSION_EXCLUDED: "Расширение не входит в выбранную категорию",
+  USER_EXCLUDED: "Исключён пользователем",
+  VIRTUAL_DISK: "Виртуальный диск: требуется отдельное обслуживание",
+  DIRECTORY_CHANGED: "Каталог или его предки изменились между порциями анализа",
   TOO_RECENT_OR_FUTURE: "Свежий файл или время изменения в будущем", LIMIT: "Недоступен новый снимок исполнения",
 };
 export const scanReason = (code:string) => scanReasons[code] ?? "Объект исключён или данные недоступны";

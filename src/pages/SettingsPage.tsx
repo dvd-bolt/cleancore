@@ -1,3 +1,5 @@
+import { CleanupSafetySettings } from "../features/cleanup-scan/CleanupSafetySettings";
+import { fetchStorageResilience, type StorageResilienceStatus } from "../lib/ipc";
 import React, { useState, useEffect, useRef } from "react";
 import { isTauriEnvironment } from "../lib/ipc";
 import { AppInfo, AppSettings } from "../types";
@@ -14,6 +16,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   settings,
   onUpdateInterval,
 }) => {
+  const [resilience, setResilience] = useState<StorageResilienceStatus | null>(null);
+  const [resilienceError, setResilienceError] = useState<string | null>(null);
+  useEffect(() => {
+    let disposed = false;
+    fetchStorageResilience().then(value => { if (!disposed) setResilience(value); }).catch(error => { if (!disposed) setResilienceError(String(error)); });
+    return () => { disposed = true; };
+  }, []);
   const timer = useRef<number | null>(null);
   const savingGuard = useRef(false);
   useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
@@ -52,7 +61,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           Настройки
         </span>
         <h2 className="font-heading text-2xl font-bold text-txt">
-          В твоём ритме.
+          Настройки приложения
         </h2>
         <p className="text-xs text-muted mt-1">
           Параметры опроса датчиков, база данных настроек и гарантии приватности.
@@ -60,6 +69,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       </div>
 
       {saveError && <p role="alert" className="text-xs text-red-300">Не удалось сохранить настройки: {saveError}</p>}
+      {resilienceError && <p role="alert">Не удалось проверить хранилище: {resilienceError}</p>}
       {/* Settings Grid */}
       <div className="space-y-4">
         {/* Setting 1: Refresh Interval */}
@@ -75,7 +85,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 </h3>
                 {savedSuccess && (
                   <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-mono">
-                    <Check className="w-3 h-3" /> {isTauriEnvironment() ? (appInfo?.settings_persistent ? "Сохранено в SQLite" : "Изменено только в памяти") : "Изменено только в предпросмотре"}
+                    <Check className="w-3 h-3" /> {isTauriEnvironment() ? (appInfo?.settings_persistent ? "Сохранено на диске" : "Изменено только в памяти") : "Изменено только в предпросмотре"}
                   </span>
                 )}
               </div>
@@ -89,6 +99,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             {(["2", "5", "10"] as const).map((sec) => (
               <button
                 key={sec}
+                aria-pressed={currentIntervalSec === sec}
                 disabled={saving}
                 onClick={() => handleIntervalChange(sec)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-mono border transition-all ${
@@ -111,16 +122,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             </div>
             <div>
               <h3 className="font-heading text-sm font-semibold text-txt">
-                Хранилище настроек (SQLite)
+                Хранилище локальных данных
               </h3>
               <p className="text-xs text-muted mt-0.5">
-                Локальная база данных параметров приложения
+                Настройки в settings.json, журнал и миграции в SQLite
               </p>
             </div>
           </div>
 
           <span className="font-mono text-xs px-3 py-1.5 rounded-lg bg-shell border border-line text-muted">
-            %LOCALAPPDATA%\CleanCore\cleancore.db
+            %LOCALAPPDATA%\CleanCore
           </span>
         </div>
 
@@ -135,14 +146,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 Тёмная тема интерфейса
               </h3>
               <p className="text-xs text-muted mt-0.5">
-                Утверждённая палитра дизайна согласно решению 001
+                Тёмные поверхности и спокойный жемчужный акцент
               </p>
             </div>
           </div>
 
           <span className="font-mono text-xs px-3 py-1.5 rounded-lg bg-shell border border-line text-txt flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-[#e0e3e9] border border-white/30" />
-            <span>Studio / Жемчуг (Pearl)</span>
+            <span>Жемчуг</span>
           </span>
         </div>
 
@@ -163,7 +174,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </div>
 
           <span className="font-mono text-xs px-3 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-700/50 text-emerald-300">
-            100% Local-First
+            Работает локально
           </span>
         </div>
 
@@ -188,6 +199,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </span>
         </div>
       </div>
+      <CleanupSafetySettings />
+      {resilience && <details aria-label="Состояние локальных данных" className="bg-surface border border-line rounded-xl p-5 text-xs space-y-2 select-text">
+        <summary className="font-semibold text-sm">Диагностика локальных данных и восстановление</summary>
+        <p>Журнал: {resilience.database_persistent ? resilience.db_path : "только в памяти"}</p>
+        <p>Настройки: {resilience.settings_persistent ? resilience.settings_path : "только в памяти"}</p>
+        <p>Версия схемы SQLite: {resilience.schema_version}</p>
+        {[resilience.db_recovery_notice, resilience.settings_recovery_notice].filter(notice => notice !== null).map((notice, index) => <p role="alert" key={index}>Повреждённый файл сохранён: {notice.quarantined_path}. Причина: {notice.reason}</p>)}
+        <p>Обновление устанавливается вручную поверх текущей версии. Сохраните резервную копию локальных данных перед обновлением.</p>
+      </details>}
+
     </div>
   );
 };

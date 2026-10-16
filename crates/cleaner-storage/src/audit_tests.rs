@@ -14,6 +14,7 @@ fn operation(id: &str, preview: &str) -> CleanupOutcome {
             reason_code: "INTENT".into(),
         }],
         recycled_bytes: "0".into(),
+        deleted_bytes: "0".into(),
         journal_ok: true,
     }
 }

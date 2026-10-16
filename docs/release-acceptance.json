@@ -1,0 +1,46 @@
+{
+  "safe_recycle": {
+    "passed": false,
+    "evidence": null
+  },
+  "windows10_22h2_x64": {
+    "passed": false,
+    "evidence": null
+  },
+  "windows11_x64": {
+    "passed": false,
+    "evidence": null
+  },
+  "offline_install": {
+    "passed": false,
+    "evidence": null
+  },
+  "upgrade_preserves_data": {
+    "passed": false,
+    "evidence": null
+  },
+  "uninstall": {
+    "passed": false,
+    "evidence": null
+  },
+  "keyboard_and_scale": {
+    "passed": false,
+    "evidence": null
+  },
+  "soak_test": {
+    "passed": false,
+    "evidence": null
+  },
+  "dependency_audit": {
+    "passed": false,
+    "evidence": null
+  },
+  "license_review": {
+    "passed": false,
+    "evidence": null
+  },
+  "local_assistant_real_model": {
+    "passed": false,
+    "evidence": null
+  }
+}

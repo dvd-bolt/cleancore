@@ -31,13 +31,94 @@ export interface NetworkMetrics {
 }
 
 export interface MetricSnapshot {
+  disks?: FieldValue<DiskMetrics>[];
+  network_interfaces?: FieldValue<NetworkMetrics>[];
   timestamp_utc: string;
   interval_ms: number;
   cpu: FieldValue<CpuMetrics>;
   memory: FieldValue<MemoryMetrics>;
   disk: FieldValue<DiskMetrics>;
   network: FieldValue<NetworkMetrics>;
+  power?: PowerStatusSnapshot;
 }
+
+export interface PowerStatusSnapshot {
+  is_battery_present: boolean;
+  is_ac_connected: boolean;
+  battery_percent?: number;
+  is_charging: boolean;
+  power_save_active: boolean;
+}
+
+export type LargeFileCategory = "DiskImage" | "Archive" | "Video" | "Installer" | "VirtualDisk" | "Other";
+
+export interface LargeFileEntry {
+  id: string;
+  path: string;
+  size_bytes: number;
+  allocated_bytes: number;
+  category: LargeFileCategory;
+  extension: string;
+  is_system_locked: boolean;
+}
+
+export interface StaleFileEntry {
+  path: string;
+  name: string;
+  size_bytes: number;
+  last_modified_utc: string;
+  days_old: number;
+  extension: string;
+}
+
+export interface RecycleBinInfo {
+  total_bytes: number;
+  item_count: number;
+}
+
+export interface DevCacheEntry {
+  path: string;
+  name: string;
+  kind: string;
+  size_bytes: number;
+  last_modified_utc: string;
+  inactive_days: number;
+}
+
+export interface DevCacheSummary {
+  total_bytes: number;
+  node_modules_count: number;
+  node_modules_bytes: number;
+  target_count: number;
+  target_bytes: number;
+  venv_count: number;
+  venv_bytes: number;
+  wsl_docker_bytes: number;
+  entries: DevCacheEntry[];
+}
+
+export interface PowerSchemeInfo {
+  guid: string;
+  name: string;
+}
+
+export interface PowerThrottleValues {
+  max_ac: number;
+  min_ac: number;
+  max_dc: number;
+  min_dc: number;
+}
+
+export type PowerProfileKind = "Quiet" | "Balanced" | "Performance";
+
+export interface PowerProfileStatus {
+  active_scheme: PowerSchemeInfo;
+  throttles: PowerThrottleValues;
+  current_profile: string;
+  has_rollback_snapshot: boolean;
+  last_snapshot_time?: string | null;
+}
+
 
 export interface ProcessItem {
   pid: number;
@@ -110,9 +191,11 @@ export interface CleanupPreviewPage {
   cancelled: boolean;
   diagnostics: Record<string, number>;
   execution_preview_id: string | null;
+  resumable?: boolean;
+  batch_ready?: boolean;
 }
 
-export type ActivePage = "overview" | "processes" | "disk" | "cleanup" | "service" | "journal" | "settings";
+export type ActivePage = "assistant" | "overview" | "processes" | "disk" | "cleanup" | "service" | "journal" | "settings";
 
 export type FileCategory =
   | "Videos"
@@ -142,6 +225,12 @@ export interface CategorySummary {
 }
 
 export interface DiskAnalysisReport {
+  engine?: string;
+  engine_note?: string | null;
+  elapsed_ms?: number;
+  allocated_bytes?: number | null;
+  volume_used_bytes?: number | null;
+  warnings?: Record<string, number>;
   root_path: string;
   total_bytes: number;
   total_files: number;
@@ -150,6 +239,19 @@ export interface DiskAnalysisReport {
   largest_files: DiskEntry[];
   largest_dirs: DiskEntry[];
   subdirs: DiskEntry[];
+  complete: boolean;
+  diagnostics: Record<string, number>;
+}
+
+export interface TreemapNode {
+  id: string; name: string; path: string; size_bytes: number; logical_bytes: number;
+  allocated_bytes: number | null; is_dir: boolean; is_aggregate: boolean;
+  file_count: number; extension: string; children: TreemapNode[];
+}
+export interface TreemapData {
+  root: TreemapNode; parent_path: string | null; indexed: boolean;
+  extensions: { extension: string; bytes: number; files: number }[];
+  empty_files: TreemapNode[]; empty_file_count: number;
 }
 
 export interface DuplicateFileEntry {
@@ -171,6 +273,7 @@ export interface DuplicateScanResult {
   groups: DuplicateGroup[];
   total_wasted_bytes: number;
   total_duplicate_files: number;
+  cached_hashes?: number;
 }
 
 export interface QuickDirectory {
@@ -181,10 +284,10 @@ export interface QuickDirectory {
 
 export interface ResourceHistory {
   timestamps_utc: string[];
-  cpu_percentages: number[];
-  memory_percentages: number[];
-  network_rx_bytes_sec: number[];
-  network_tx_bytes_sec: number[];
+  cpu_percentages: (number | null)[];
+  memory_percentages: (number | null)[];
+  network_rx_bytes_sec: (number | null)[];
+  network_tx_bytes_sec: (number | null)[];
 }
 
 export type DiskTaskState = "Running" | "Completed" | "Cancelled" | "Failed";
@@ -294,6 +397,12 @@ export interface LaunchResult {
   success: boolean;
   pid: number | null;
   message: string;
+  residue_context_id?: string;
+}
+export interface AppResidueReport {
+  app_name: string; still_registered: boolean; complete: boolean; inspected_entries: number;
+  candidates: { path: string; reason: string; confidence: string; logical_bytes: string | null; files: number; complete: boolean }[];
+  warnings: string[];
 }
 
 export type CsvExportSection = "programs" | "startup" | "diagnostics" | "all";
@@ -303,5 +412,18 @@ export interface CsvExportConfig {
   include_system_components: boolean;
   target_path: string | null;
 }
+
+export interface SmartInsight {
+  id: string;
+  title: string;
+  description: string;
+  category: "power" | "disk" | "recycle_bin" | "dev_cache" | "memory" | "system" | string;
+  level: "info" | "tip" | "warning" | "critical";
+  estimatedSavings: string | null;
+  actionLabel: string;
+  targetPage: ActivePage;
+  targetTab?: string | null;
+}
+
 
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { cancelCleanupScan, getCleanupPreview, getScanProgress, isTauriEnvironment, startCleanupScan } from "../../lib/ipc";
+import { cancelCleanupScan, getCleanupPreview, getScanProgress, isTauriEnvironment, startCleanupScan, resumeCleanupScan } from "../../lib/ipc";
 import type { CleanupPreviewPage, TaskStatus } from "../../types";
 export const PAGE_SIZE = 15;
 const SESSION_KEY = "cleancore-scan-task";
@@ -36,13 +36,20 @@ export function useCleanupScan() {
     },200);
     return()=>{disposed=true;window.clearTimeout(timer);};
   },[taskId,status,scanning,page,query]);
-  const start=useCallback(async()=>{
+  const start=useCallback(async(categoryId="user-temp-v1", projectPath?: string)=>{
     if(startPending.current || scanning)return;startPending.current=true;setError(null);setScanning(true);setPreview(null);setStatus(null);setTaskId(null);setPage(0);setQuery("");request.current++;
-    try{sessionStorage.removeItem(SESSION_KEY);const id=await startCleanupScan();sessionStorage.setItem(SESSION_KEY,id);if(mounted.current){setTaskId(id);setStatus({id,kind:"scan:user-temp-v1",state:"Running",processed_items:0});}}
+    try{sessionStorage.removeItem(SESSION_KEY);const id=await startCleanupScan(categoryId,projectPath);sessionStorage.setItem(SESSION_KEY,id);if(mounted.current){setTaskId(id);setStatus({id,kind:`scan:${categoryId}`,state:"Running",processed_items:0});}}
     catch(e){if(mounted.current){setError(e instanceof Error?e.message:String(e));setScanning(false);}}
     finally{startPending.current=false;}
   },[scanning]);
   const cancel=async()=>{if(!taskId)return;try{await cancelCleanupScan(taskId);}catch(e){if(mounted.current)setError(e instanceof Error?e.message:String(e));}};
+  const resume=async()=>{
+    if(!taskId || startPending.current || scanning)return;
+    startPending.current=true;setError(null);
+    try{await resumeCleanupScan(taskId);if(mounted.current){request.current++;setPreview(null);setPage(0);setQuery("");setStatus(null);setScanning(true);}}
+    catch(e){if(mounted.current)setError(e instanceof Error?e.message:String(e));}
+    finally{startPending.current=false;}
+  };
   const search=(value:string)=>{setQuery(value);setPage(0);};
-  return {taskId,status,scanning,preview,loading,page,setPage,query,search,error,start,cancel};
+  return {taskId,status,scanning,preview,loading,page,setPage,query,search,error,start,cancel,resume};
 }

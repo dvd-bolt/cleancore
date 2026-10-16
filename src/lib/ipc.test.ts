@@ -85,57 +85,19 @@ describe("IPC Bridge & Fallback behavior", () => {
     await expect(getCleanupPreview("unknown")).rejects.toThrow("desktop");
   });
 
-  it("fetches quick directories and resource history safely in browser preview", async () => {
-    const dirs = await fetchQuickDirectories();
-    expect(Array.isArray(dirs)).toBe(true);
-    expect(dirs.length).toBeGreaterThan(0);
-    expect(dirs[0]).toHaveProperty("path");
-
-    const history = await fetchResourceHistory();
-    expect(Array.isArray(history.cpu_percentages)).toBe(true);
-    expect(history.cpu_percentages.length).toBeGreaterThan(0);
+  it("returns empty disk data without fabricating history in browser preview", async () => {
+    expect(await fetchQuickDirectories()).toEqual([]);
+    expect((await fetchResourceHistory()).cpu_percentages).toEqual([]);
   });
 
-  it("provides realistic browser preview data for Stage 6 Service Center APIs", async () => {
-    const progs = await getServicePrograms();
-    expect(Array.isArray(progs)).toBe(true);
-    expect(progs.length).toBeGreaterThan(0);
-    expect(progs[0]).toHaveProperty("display_name");
-    expect(progs[0]).toHaveProperty("id");
-    expect(progs[0]).toHaveProperty("registry_hive");
-
-    const uninstall = await launchServiceUninstaller("HKLM_64_7Zip");
-    expect(uninstall.success).toBe(true);
-    expect(uninstall.pid).toBe(1234);
-
-    const startup = await getServiceStartup();
-    expect(Array.isArray(startup)).toBe(true);
-    expect(startup.length).toBeGreaterThan(0);
-    expect(startup[0]).toHaveProperty("source");
-    expect(startup[0]).toHaveProperty("command");
-
-    const av = await getServiceAntivirus();
-    expect(av.state).toBe("protected");
-    expect(Array.isArray(av.providers)).toBe(true);
-    expect(av.providers.length).toBeGreaterThan(0);
-
-    const diag = await getServiceDiagnostics();
-    expect(diag.health).toBe("healthy");
-    expect(diag.system_drive).toBe("C:");
-    expect(Array.isArray(diag.alerts)).toBe(true);
-    expect(Array.isArray(diag.recommendations)).toBe(true);
-
-    const tool = await launchServiceTool("cleanmgr");
-    expect(tool.success).toBe(true);
-    expect(tool.pid).toBe(5678);
-
-    const csv = await exportServiceCsv({
-      sections: ["programs"],
-      include_system_components: false,
-      target_path: null,
-    });
-    expect(typeof csv).toBe("string");
-    expect(csv).toContain("ОТЧЁТ ЦЕНТРА ОБСЛУЖИВАНИЯ CLEANCORE");
+  it("does not invent service data or successful actions without desktop", async () => {
+    expect(await getServicePrograms()).toEqual([]);
+    expect(await getServiceStartup()).toEqual([]);
+    await expect(launchServiceUninstaller("fake")).rejects.toThrow("desktop");
+    await expect(launchServiceTool("cleanmgr")).rejects.toThrow("desktop");
+    await expect(getServiceAntivirus()).rejects.toThrow("desktop");
+    await expect(getServiceDiagnostics()).rejects.toThrow("desktop");
+    await expect(exportServiceCsv({ sections: [], include_system_components: false, target_path: null })).rejects.toThrow("desktop");
   });
 
   it("invokes native Tauri commands and propagates errors for Stage 6 Service Center APIs", async () => {
@@ -148,7 +110,7 @@ describe("IPC Bridge & Fallback behavior", () => {
 
     vi.mocked(invoke).mockResolvedValueOnce({ success: true, pid: 999, message: "OK" });
     const uninst = await launchServiceUninstaller("p1");
-    expect(invoke).toHaveBeenCalledWith("launch_uninstaller", { programId: "p1" });
+    expect(invoke).toHaveBeenCalledWith("launch_uninstaller_with_residue_context", { programId: "p1", acknowledged: true });
     expect(uninst.pid).toBe(999);
 
     vi.mocked(invoke).mockResolvedValueOnce([{ id: "s1", name: "Startup 1" }]);

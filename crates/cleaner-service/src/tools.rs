@@ -8,10 +8,27 @@ use std::path::PathBuf;
 /// Разрешается динамически через системную переменную окружения `SystemRoot` или `WINDIR`
 /// с безопасным резервным значением `C:\Windows\System32`.
 pub fn get_system32_directory() -> PathBuf {
-    let sys_root = std::env::var("SystemRoot")
-        .or_else(|_| std::env::var("WINDIR"))
-        .unwrap_or_else(|_| "C:\\Windows".to_string());
-    PathBuf::from(sys_root).join("System32")
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStringExt;
+        let mut buffer = vec![0u16; 32768];
+        // SAFETY: buffer is writable and its capacity is passed in UTF-16 units.
+        let length = unsafe {
+            windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW(
+                buffer.as_mut_ptr(),
+                buffer.len() as u32,
+            )
+        } as usize;
+        if length > 0 && length < buffer.len() {
+            return PathBuf::from(std::ffi::OsString::from_wide(&buffer[..length]));
+        }
+        // No environment/PATH fallback can authorize execution.
+        PathBuf::new()
+    }
+    #[cfg(not(windows))]
+    {
+        PathBuf::from(r"C:\Windows\System32")
+    }
 }
 
 /// Возвращает метаданные, целевой исполняемый файл и аргументы для указанной утилиты.
@@ -122,7 +139,7 @@ pub fn launch_system_tool(tool_id: SystemToolId) -> Result<LaunchResult, Service
 
     // Строгая проверка каталога размещения (только System32)
     let sys32 = get_system32_directory();
-    if !exe_path.starts_with(&sys32) {
+    if !sys32.is_absolute() || !exe_path.starts_with(&sys32) {
         return Err(ServiceError::UnauthorizedTool(format!(
             "Исполняемый файл '{}' находится вне доверенного каталога System32",
             exe_path.display()

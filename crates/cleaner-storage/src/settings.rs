@@ -107,7 +107,10 @@ impl SettingsManager {
             Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
                 return Err(StorageError::Io(err));
             }
-            Err(err) => Some(format!("Ошибка чтения файла: {err}")),
+            Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
+                Some(format!("Недопустимая кодировка JSON: {err}"))
+            }
+            Err(err) => return Err(StorageError::Io(err)),
         };
 
         if let Some(reason) = failure_reason {
@@ -154,14 +157,13 @@ impl SettingsManager {
         let mut sanitized = new_settings.clone();
         validate_and_sanitize_settings(&mut sanitized);
 
-        if !self.is_in_memory {
-            atomic_write_json(&self.path, &sanitized)?;
-        }
-
         let mut lock = self
             .settings
             .lock()
             .map_err(|e| StorageError::Lock(format!("Мьютекс настроек повреждён: {e}")))?;
+        if !self.is_in_memory {
+            atomic_write_json(&self.path, &sanitized)?;
+        }
         *lock = sanitized;
 
         Ok(())
@@ -219,14 +221,23 @@ fn atomic_write_json(path: &Path, settings: &AppSettings) -> Result<(), StorageE
     }
 
     let json_bytes = serde_json::to_vec_pretty(settings)?;
-    let tmp_path = format!("{}.{}.tmp", path.display(), std::process::id());
+    static SERIAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let sequence = SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let tmp_path = format!(
+        "{}.{}.{now}.{sequence}.tmp",
+        path.display(),
+        std::process::id()
+    );
     let tmp_path = PathBuf::from(tmp_path);
 
     {
         let mut file = std::fs::OpenOptions::new()
             .write(true)
-            .create(true)
-            .truncate(true)
+            .create_new(true)
             .open(&tmp_path)?;
         file.write_all(&json_bytes)?;
         file.sync_all()?;

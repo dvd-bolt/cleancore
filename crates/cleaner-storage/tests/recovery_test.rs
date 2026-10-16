@@ -133,3 +133,22 @@ fn test_lock_contention_does_not_quarantine() {
     drop(storage1);
     let _ = std::fs::remove_dir_all(parent);
 }
+
+#[test]
+fn sqlite_sidecars_are_preserved_as_evidence() {
+    let dir = std::env::temp_dir().join(format!("cleancore_sidecars_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = dir.join("data.db");
+    let sidecar = dir.join("data.db-wal");
+    std::fs::write(&sidecar, b"recovery evidence").unwrap();
+    cleaner_storage::recovery::quarantine_sqlite_sidecars(&db).unwrap();
+    assert!(!sidecar.exists());
+    let archived = std::fs::read_dir(&dir)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    assert_eq!(std::fs::read(archived).unwrap(), b"recovery evidence");
+    std::fs::remove_dir_all(dir).unwrap();
+}

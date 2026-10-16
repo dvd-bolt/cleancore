@@ -63,17 +63,17 @@ impl StorageManager {
         }
 
         let mut recovery_notice: Option<StorageRecoveryNotice> = None;
+        // Retain single-process ownership throughout corruption recovery as well.
+        let audit_lock = Self::acquire_audit_lock(&db_path)?;
 
-        let open_and_migrate =
-            |target: &Path| -> Result<(Connection, Option<std::fs::File>), StorageError> {
-                let lock = Self::acquire_audit_lock(target)?;
-                let mut conn = Connection::open(target)?;
-                conn.execute_batch("PRAGMA synchronous = FULL;")?;
-                migrations::apply_migrations(&mut conn)?;
-                Ok((conn, lock))
-            };
+        let open_and_migrate = |target: &Path| -> Result<Connection, StorageError> {
+            let mut conn = Connection::open(target)?;
+            conn.execute_batch("PRAGMA synchronous = FULL;")?;
+            migrations::apply_migrations(&mut conn)?;
+            Ok(conn)
+        };
 
-        let (conn, audit_lock) = match open_and_migrate(&db_path) {
+        let conn = match open_and_migrate(&db_path) {
             Ok(res) => res,
             Err(err) if db_path.exists() && is_corruption_error(&err) => {
                 warn!(
@@ -82,7 +82,7 @@ impl StorageManager {
                 );
                 // На Windows открытые дескрипторы уже сброшены, так как open_and_migrate вернул ошибку
                 let quarantined = recovery::quarantine_file(&db_path, "corrupt")?;
-                recovery::clean_sqlite_sidecars(&db_path);
+                recovery::quarantine_sqlite_sidecars(&db_path)?;
 
                 let notice = StorageRecoveryNotice {
                     original_path: db_path.clone(),
@@ -105,6 +105,10 @@ impl StorageManager {
             recovery_notice,
         };
         manager.init_audit()?;
+        manager.init_power_store()?;
+        if let Err(error) = manager.init_duplicate_cache() {
+            warn!(%error, "Кеш хешей недоступен; анализ выполнит полное чтение");
+        }
         Ok(manager)
     }
 
@@ -119,6 +123,10 @@ impl StorageManager {
             recovery_notice: None,
         };
         manager.init_audit()?;
+        manager.init_power_store()?;
+        if let Err(error) = manager.init_duplicate_cache() {
+            warn!(%error, "Кеш хешей недоступен; анализ выполнит полное чтение");
+        }
         Ok(manager)
     }
 

@@ -198,12 +198,16 @@ pub fn evaluate_diagnostics_rules(
     (health, alerts, recommendations)
 }
 
+fn sysinfo_minimum_interval() -> std::time::Duration {
+    std::time::Duration::from_millis(250)
+}
+
 /// Собирает актуальные системные метрики и формирует сводку диагностики здоровья.
 pub fn get_system_diagnostics() -> Result<DiagnosticsSummary, ServiceError> {
     let mut collector = cleaner_system::metrics::SystemCollector::new();
-    // Небольшая задержка для корректного замера дельты CPU
-    std::thread::sleep(std::time::Duration::from_millis(150));
-    let snapshot = collector.collect_snapshot(150);
+    collector.collect_snapshot(0);
+    std::thread::sleep(sysinfo_minimum_interval());
+    let snapshot = collector.collect_snapshot(250);
 
     let cpu_usage_percent = snapshot.cpu.value().map(|c| c.total_usage_percent);
     let memory_usage_percent = snapshot.memory.value().map(|m| m.usage_percent);

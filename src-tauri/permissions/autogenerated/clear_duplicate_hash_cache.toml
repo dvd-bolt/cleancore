@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-clear-duplicate-hash-cache"
+description = "Enables the clear_duplicate_hash_cache command without any pre-configured scope."
+commands.allow = ["clear_duplicate_hash_cache"]
+
+[[permission]]
+identifier = "deny-clear-duplicate-hash-cache"
+description = "Denies the clear_duplicate_hash_cache command without any pre-configured scope."
+commands.deny = ["clear_duplicate_hash_cache"]

@@ -66,6 +66,8 @@ pub struct StorageResilienceStatus {
     pub settings_recovered: bool,
     pub settings_recovery_notice: Option<SettingsRecoveryNotice>,
     pub schema_version: i32,
+    pub database_persistent: bool,
+    pub settings_persistent: bool,
 }
 
 /// Возвращает диагностические сведения об устойчивости хранилища и настроек.
@@ -73,7 +75,10 @@ pub struct StorageResilienceStatus {
 pub fn get_storage_resilience_status(
     state: State<'_, AppState>,
 ) -> Result<StorageResilienceStatus, ApiError> {
-    let schema_version = state.storage.current_schema_version().unwrap_or(0);
+    let schema_version = state
+        .storage
+        .current_schema_version()
+        .map_err(ApiError::from)?;
     Ok(StorageResilienceStatus {
         db_path: state.storage.db_path().to_string_lossy().to_string(),
         settings_path: state.settings.path().to_string_lossy().to_string(),
@@ -82,6 +87,8 @@ pub fn get_storage_resilience_status(
         settings_recovered: state.settings.was_recovered(),
         settings_recovery_notice: state.settings.recovery_notice().cloned(),
         schema_version,
+        database_persistent: state.storage.is_persistent(),
+        settings_persistent: state.settings.is_persistent(),
     })
 }
 
@@ -149,8 +156,102 @@ pub fn toggle_pause_metrics(state: State<'_, AppState>, paused: bool) -> Result<
 pub fn start_cleanup_scan(
     state: State<'_, AppState>,
     category_id: String,
+    project_path: Option<String>,
 ) -> Result<String, ApiError> {
-    state.task_manager.start_scan(&category_id)
+    let preferences = state
+        .cleanup_preferences
+        .read()
+        .map_err(|_| ApiError {
+            code: "PREFERENCES_UNAVAILABLE".into(),
+            message: "Настройки защиты недоступны".into(),
+        })?
+        .clone()
+        .ok_or_else(|| ApiError {
+            code: "PREFERENCES_UNAVAILABLE".into(),
+            message: "Настройки защиты повреждены. Сохраните проверенные исключения в настройках"
+                .into(),
+        })?;
+    if category_id.starts_with("project-") {
+        let project = project_path
+            .filter(|p| !p.is_empty() && p.len() <= 4096)
+            .ok_or_else(|| ApiError {
+                code: "INVALID_PROJECT".into(),
+                message: "Укажите полный путь к выбранному проекту".into(),
+            })?;
+        state.task_manager.start_project_scan(
+            &category_id,
+            std::path::Path::new(&project),
+            preferences.excluded_paths,
+        )
+    } else {
+        if project_path.is_some() {
+            return Err(ApiError {
+                code: "INVALID_PROJECT".into(),
+                message: "Для этой категории нельзя менять корень".into(),
+            });
+        }
+        state
+            .task_manager
+            .start_scan_with_exclusions(&category_id, preferences.excluded_paths)
+    }
+}
+
+#[tauri::command]
+pub fn resume_cleanup_scan(
+    state: State<'_, AppState>,
+    task_id: String,
+) -> Result<String, ApiError> {
+    state.task_manager.resume_scan(&task_id)
+}
+
+#[tauri::command]
+pub fn get_cleanup_rules(state: State<'_, AppState>) -> Vec<cleaner_cleanup::rules::CleanupRule> {
+    state.task_manager.rules()
+}
+#[tauri::command]
+pub fn get_cleanup_profile_context() -> Result<String, ApiError> {
+    cleaner_cleanup::path_safety::current_profile_context().map_err(Into::into)
+}
+
+#[tauri::command]
+pub fn get_cleanup_preferences(
+    state: State<'_, AppState>,
+) -> Result<cleaner_core::cleanup_preferences::CleanupPreferences, ApiError> {
+    state.storage.load_cleanup_preferences().map_err(Into::into)
+}
+#[tauri::command]
+pub async fn save_cleanup_preferences(
+    state: State<'_, AppState>,
+    preferences: cleaner_core::cleanup_preferences::CleanupPreferences,
+) -> Result<(), ApiError> {
+    preferences.validate().map_err(|e| ApiError {
+        code: "INVALID_EXCLUSION".into(),
+        message: e.into(),
+    })?;
+    let storage = state.storage.clone();
+    let shared = state.cleanup_preferences.clone();
+    let service = state.cleanup.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut guard = shared.write().map_err(|_| ApiError {
+            code: "PREFERENCES_UNAVAILABLE".into(),
+            message: "Настройки недоступны".into(),
+        })?;
+        service.revoke_all_previews()?;
+        storage
+            .save_cleanup_preferences(&preferences)
+            .map_err(ApiError::from)?;
+        *guard = Some(preferences);
+        Ok(())
+    })
+    .await
+    .map_err(|_| ApiError {
+        code: "WORKER_FAILED".into(),
+        message: "Не удалось сохранить исключения".into(),
+    })?
+}
+#[tauri::command]
+pub fn clear_duplicate_hash_cache(state: State<'_, AppState>) -> Result<(), ApiError> {
+    state.storage.clear_duplicate_cache().map_err(Into::into)
 }
 
 /// Получение актуального прогресса и статуса задачи сканирования.

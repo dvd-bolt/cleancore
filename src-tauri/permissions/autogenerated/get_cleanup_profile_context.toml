@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-cleanup-profile-context"
+description = "Enables the get_cleanup_profile_context command without any pre-configured scope."
+commands.allow = ["get_cleanup_profile_context"]
+
+[[permission]]
+identifier = "deny-get-cleanup-profile-context"
+description = "Denies the get_cleanup_profile_context command without any pre-configured scope."
+commands.deny = ["get_cleanup_profile_context"]

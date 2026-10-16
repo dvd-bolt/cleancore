@@ -1,3 +1,7 @@
+import { AppResiduePanel } from "../features/cleanup-scan/AppResiduePanel";
+import { AccessibleDialog } from "../components/AccessibleDialog";
+import { DevAndRecyclePanel } from "../features/service/DevAndRecyclePanel";
+import { PowerTuningCard } from "../features/service/PowerTuningCard";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   ActivePage,
@@ -14,11 +18,11 @@ import {
   getServicePrograms,
   launchServiceUninstaller,
   getServiceStartup,
+  setStartupEnabled,
   getServiceAntivirus,
   getServiceDiagnostics,
   launchServiceTool,
-  exportServiceCsv,
-  isTauriEnvironment,
+  saveServiceCsv,
 } from "../lib/ipc";
 import {
   Package,
@@ -47,7 +51,7 @@ import {
   Lightbulb,
 } from "lucide-react";
 
-export type ServiceTab = "programs" | "startup" | "diagnostics" | "tools";
+export type ServiceTab = "programs" | "startup" | "diagnostics" | "dev_recycle" | "tools";
 
 export interface ServicePageProps {
   onNavigate?: (page: ActivePage) => void;
@@ -160,6 +164,10 @@ export const ServicePage: React.FC<ServicePageProps> = ({
 
   // Данные модулей 6.1–6.4
   const [programs, setPrograms] = useState<InstalledProgram[]>(initialPrograms ?? []);
+  const [startupChange,setStartupChange]=useState<StartupItem|null>(null);
+  const [startupBusy,setStartupBusy]=useState(false);
+  const [startupChangeError,setStartupChangeError]=useState<string|null>(null);
+  const [startupAcknowledged,setStartupAcknowledged]=useState(false);
   const [startupItems, setStartupItems] = useState<StartupItem[]>(initialStartup ?? []);
   const [antivirus, setAntivirus] = useState<AntivirusStatus | null>(initialAntivirus ?? null);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsSummary | null>(initialDiagnostics ?? null);
@@ -172,6 +180,10 @@ export const ServicePage: React.FC<ServicePageProps> = ({
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(
     initialFeedbackMessage
   );
+
+  const [lastRemoval,setLastRemoval] = useState<{id:string;name:string} | null>(() => {
+    try { const value=JSON.parse(sessionStorage.getItem("cleancore-last-removal") ?? "null"); return value && typeof value.id==="string" && typeof value.name==="string" ? value : null; } catch { return null; }
+  });
 
   // Вкладка 1: Программы — поиск, сортировка, фильтрация
   const [progSearch, setProgSearch] = useState<string>(initialSearch);
@@ -200,7 +212,6 @@ export const ServicePage: React.FC<ServicePageProps> = ({
     diagnostics: boolean;
   }>({ programs: true, startup: true, diagnostics: true });
   const [exportIncludeSystem, setExportIncludeSystem] = useState<boolean>(false);
-  const [exportCustomPath, setExportCustomPath] = useState<string>("");
   const [exportBusy, setExportBusy] = useState<boolean>(false);
   const [exportResult, setExportResult] = useState<string | null>(null);
 
@@ -334,6 +345,10 @@ export const ServicePage: React.FC<ServicePageProps> = ({
         type: res.success ? "success" : "error",
         text: res.message,
       });
+      if (res.success && res.residue_context_id) {
+        const context={id:res.residue_context_id,name:uninstallerModalProg.display_name};
+        sessionStorage.setItem("cleancore-last-removal",JSON.stringify(context));setLastRemoval(context);
+      }
       setUninstallerModalProg(null);
       setUninstallerAcknowledged(false);
     } catch (err) {
@@ -386,28 +401,17 @@ export const ServicePage: React.FC<ServicePageProps> = ({
     const config: CsvExportConfig = {
       sections: selectedSections,
       include_system_components: exportIncludeSystem,
-      target_path: exportCustomPath.trim() || null,
+      target_path: null,
     };
 
     try {
-      const csvData = await exportServiceCsv(config);
-      setExportResult(csvData);
-
-      // В не-Tauri режиме (браузер) инициируем скачивание файла
-      if (!isTauriEnvironment() && typeof window !== "undefined") {
-        const blob = new Blob([csvData], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute("download", `cleancore_service_report_${Date.now()}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
+      const savedPath = await saveServiceCsv(config);
+      if (savedPath === null) return;
+      setExportResult(savedPath);
 
       setFeedbackMessage({
         type: "success",
-        text: "Отчёт Центра обслуживания успешно сформирован и экранирован от CSV-инъекций.",
+        text: "CSV-отчёт сохранён в выбранный файл.",
       });
     } catch (err) {
       setFeedbackMessage({
@@ -443,9 +447,6 @@ export const ServicePage: React.FC<ServicePageProps> = ({
                   <h1 className="font-heading text-xl font-bold tracking-wide text-txt">
                     Центр обслуживания
                   </h1>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-surface border border-line text-accent font-semibold">
-                    v0.3 • МОДУЛИ 6.1–6.6
-                  </span>
                 </div>
                 <p className="text-xs text-muted mt-0.5">
                   Инвентаризация ПО, аудит автозагрузки, безопасность Defender, диагностика и штатные утилиты Windows
@@ -488,7 +489,7 @@ export const ServicePage: React.FC<ServicePageProps> = ({
             }`}
           >
             <Package className="w-4 h-4" />
-            <span>1. Программы</span>
+            <span>Программы</span>
             <span
               className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
                 activeTab === "programs" ? "bg-accent-ink/10 text-accent-ink font-bold" : "bg-surface border border-line text-dim"
@@ -507,7 +508,7 @@ export const ServicePage: React.FC<ServicePageProps> = ({
             }`}
           >
             <Activity className="w-4 h-4" />
-            <span>2. Автозагрузка</span>
+            <span>Автозагрузка</span>
             <span
               className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
                 activeTab === "startup" ? "bg-accent-ink/10 text-accent-ink font-bold" : "bg-surface border border-line text-dim"
@@ -526,7 +527,7 @@ export const ServicePage: React.FC<ServicePageProps> = ({
             }`}
           >
             <ShieldCheck className="w-4 h-4" />
-            <span>3. Защита и здоровье</span>
+            <span>Защита и диагностика</span>
             {diagnostics && (
               <span
                 className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
@@ -543,6 +544,18 @@ export const ServicePage: React.FC<ServicePageProps> = ({
           </button>
 
           <button
+            onClick={() => setActiveTab("dev_recycle")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium transition-all ${
+              activeTab === "dev_recycle"
+                ? "bg-accent text-accent-ink font-semibold shadow-sm"
+                : "text-muted hover:text-txt hover:bg-surface-2"
+            }`}
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>Корзина и кэши</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab("tools")}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium transition-all ${
               activeTab === "tools"
@@ -551,7 +564,7 @@ export const ServicePage: React.FC<ServicePageProps> = ({
             }`}
           >
             <ExternalLink className="w-4 h-4" />
-            <span>4. Инструменты Windows</span>
+            <span>Инструменты Windows</span>
             <span
               className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
                 activeTab === "tools" ? "bg-accent-ink/10 text-accent-ink font-bold" : "bg-surface border border-line text-dim"
@@ -590,6 +603,8 @@ export const ServicePage: React.FC<ServicePageProps> = ({
           </button>
         </div>
       )}
+
+      {lastRemoval && activeTab==="programs" && <AppResiduePanel key={lastRemoval.id} contextId={lastRemoval.id} appName={lastRemoval.name} onDismiss={()=>{sessionStorage.removeItem("cleancore-last-removal");setLastRemoval(null);}}/>}
 
       {/* Вкладка 1: Программы */}
       {activeTab === "programs" && (
@@ -815,10 +830,9 @@ export const ServicePage: React.FC<ServicePageProps> = ({
             <div className="flex items-start gap-3">
               <Info className="w-5 h-5 text-sky-400 shrink-0 mt-0.5" />
               <div>
-                <h4 className="text-xs font-semibold text-txt">Безопасный аудит автозапуска (Только чтение)</h4>
+                <h4 className="text-xs font-semibold text-txt">Управление автозапуском текущего пользователя</h4>
                 <p className="text-xs text-muted mt-0.5 leading-relaxed">
-                  CleanCore работает в режиме строгого чтения метаданных: приложение не отключает службы и не изменяет
-                  системный реестр, защищая систему от сбоев загрузки. Для отключения элементов используйте встроенный Диспетчер задач.
+                  Записи Run и папки Startup текущего пользователя можно включать и отключать. Команды запуска и файлы сохраняются. Это влияет на следующий вход в Windows и не завершает работающую программу. Системные записи и RunOnce доступны через Диспетчер задач.
                 </p>
               </div>
             </div>
@@ -951,6 +965,8 @@ export const ServicePage: React.FC<ServicePageProps> = ({
                           >
                             {item.enabled ? "Включено" : "Отключено"}
                           </span>
+                          {(item.id.startsWith("HKCU_Run_") || item.id.startsWith("StartupFolderUser_")) && <button disabled={startupBusy} onClick={()=>{setStartupChange(item);setStartupAcknowledged(false);setStartupChangeError(null);}} className="block mx-auto mt-2 border border-line rounded px-2 py-1 text-xs disabled:opacity-40">{item.enabled ? "Отключить" : "Восстановить"}</button>}
+
                         </td>
                         <td className="py-3 px-4 text-right">
                           <span
@@ -981,6 +997,15 @@ export const ServicePage: React.FC<ServicePageProps> = ({
         </div>
       )}
 
+      {startupChange && <AccessibleDialog busy={startupBusy} onClose={()=>setStartupChange(null)} title={startupChange.enabled ? "Отключить автозапуск?" : "Восстановить автозапуск?"}>
+        <div className="w-full max-w-lg bg-surface border border-line rounded-2xl p-6 space-y-3"><h2 className="font-heading text-xl">{startupChange.enabled ? "Отключить автозапуск?" : "Восстановить автозапуск?"}</h2>
+        <p className="text-sm break-all">{startupChange.name}</p><p className="text-xs text-muted break-all select-text">{startupChange.command}</p>
+        <p className="text-xs text-muted mt-3">Изменится только отметка состояния автозапуска Windows. Команда и файлы не удаляются. Эффект — при следующем входе в Windows; работающая программа не завершится.</p>
+        <label className="flex gap-2 text-sm mt-4"><input type="checkbox" checked={startupAcknowledged} disabled={startupBusy} onChange={e=>setStartupAcknowledged(e.target.checked)}/>Подтверждаю изменение этой записи.</label>
+        {startupChangeError && <p role="alert" className="text-sm text-red-300 mt-3">{startupChangeError}</p>}
+        <div className="flex gap-3 mt-4"><button disabled={startupBusy} onClick={()=>setStartupChange(null)} className="border border-line rounded px-3 py-2">Отмена</button><button disabled={!startupAcknowledged||startupBusy} onClick={async()=>{if(startupBusy)return;setStartupBusy(true);try{await setStartupEnabled(startupChange.id,startupChange.command,!startupChange.enabled);setStartupItems(await getServiceStartup());setStartupChange(null);}catch(e){setStartupChangeError(e instanceof Error?e.message:String(e));}finally{setStartupBusy(false);}}} className="bg-accent text-accent-ink rounded px-3 py-2 disabled:opacity-40">{startupBusy?"Сохраняем…":"Подтвердить"}</button></div>
+        </div>
+      </AccessibleDialog>}
       {/* Вкладка 3: Защита и здоровье */}
       {activeTab === "diagnostics" && (
         <div className="space-y-5">
@@ -1246,7 +1271,15 @@ export const ServicePage: React.FC<ServicePageProps> = ({
               </div>
             )}
           </div>
+
+          {/* Настройка профилей энергопотребления и троттлинга ЦП (OPT-05) */}
+          <PowerTuningCard />
         </div>
+      )}
+
+      {/* Вкладка: Корзина и кэши разработки (OPT-04) */}
+      {activeTab === "dev_recycle" && (
+        <DevAndRecyclePanel />
       )}
 
       {/* Вкладка 4: Штатные инструменты Windows */}
@@ -1311,11 +1344,7 @@ export const ServicePage: React.FC<ServicePageProps> = ({
 
       {/* Модальное окно деинсталлятора (Safety Confirmation Dialog) */}
       {uninstallerModalProg && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4"
-        >
+        <AccessibleDialog title="Запуск официального деинсталлятора" onClose={() => setUninstallerModalProg(null)} busy={uninstallerBusy}>
           <div className="bg-surface border border-line rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -1333,6 +1362,7 @@ export const ServicePage: React.FC<ServicePageProps> = ({
               </div>
               <button
                 onClick={() => setUninstallerModalProg(null)}
+                aria-label="Закрыть подтверждение" disabled={uninstallerBusy}
                 className="text-muted hover:text-txt p-1 rounded-lg hover:bg-surface-2"
               >
                 <X className="w-4 h-4" />
@@ -1412,6 +1442,7 @@ export const ServicePage: React.FC<ServicePageProps> = ({
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-line/60">
               <button
                 onClick={() => setUninstallerModalProg(null)}
+                aria-label="Закрыть подтверждение" disabled={uninstallerBusy}
                 className="px-4 py-2 rounded-xl bg-shell border border-line text-xs font-medium text-muted hover:text-txt hover:bg-surface-2 transition-all"
               >
                 Отмена
@@ -1435,17 +1466,13 @@ export const ServicePage: React.FC<ServicePageProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </AccessibleDialog>
       )}
 
       {/* Модальное окно экспорта в CSV (Mod 6.6) */}
       {exportModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4"
-        >
-          <div className="bg-surface border border-line rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+        <AccessibleDialog title="Экспорт отчёта обслуживания" onClose={() => setExportModalOpen(false)} busy={exportBusy}>
+          <div className="bg-surface border border-line rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl space-y-4">
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-emerald-950/40 border border-emerald-700/50 flex items-center justify-center text-emerald-400">
@@ -1462,6 +1489,7 @@ export const ServicePage: React.FC<ServicePageProps> = ({
               </div>
               <button
                 onClick={() => setExportModalOpen(false)}
+                aria-label="Закрыть экспорт" disabled={exportBusy}
                 className="text-muted hover:text-txt p-1 rounded-lg hover:bg-surface-2"
               >
                 <X className="w-4 h-4" />
@@ -1515,24 +1543,13 @@ export const ServicePage: React.FC<ServicePageProps> = ({
               </label>
             </div>
 
-            {/* Путь сохранения (опционально) */}
-            <div className="space-y-1.5 text-xs">
-              <span className="text-dim">Пользовательский путь файла (опционально):</span>
-              <input
-                type="text"
-                placeholder="По умолчанию: папка Загрузки пользователя"
-                value={exportCustomPath}
-                onChange={(e) => setExportCustomPath(e.target.value)}
-                className="w-full bg-shell border border-line rounded-lg px-3 py-1.5 text-xs text-txt placeholder:text-dim font-mono focus:outline-none focus:border-accent"
-              />
-            </div>
+            <p className="text-xs text-muted">Выберите новое имя CSV-файла в системном диалоге. Существующие файлы не перезаписываются.</p>
 
             {/* Гарантия безопасности (CWE-1236) */}
             <div className="bg-shell/80 border border-line rounded-xl p-3 flex items-start gap-2.5 text-[11px] text-muted">
               <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
               <p className="leading-relaxed">
-                Все ячейки защищены от CSV-инъекций (CWE-1236): символы формул <code className="font-mono text-accent">=, +, -, @</code> экранируются
-                апострофом, гарантируя безопасность при открытии в MS Excel и LibreOffice Calc.
+                При экспорте символы формул <code className="font-mono text-accent">=, +, -, @</code> экранируются, чтобы таблицы не исполняли их как формулы.
               </p>
             </div>
 
@@ -1540,7 +1557,7 @@ export const ServicePage: React.FC<ServicePageProps> = ({
             {exportResult && (
               <div className="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-700/50 text-xs text-emerald-300 font-mono flex items-center justify-between">
                 <span>Отчёт успешно сформирован!</span>
-                <span className="text-[10px] text-dim">{exportResult.length} байт</span>
+                <span className="text-[10px] text-dim">{exportResult}</span>
               </div>
             )}
 
@@ -1548,6 +1565,7 @@ export const ServicePage: React.FC<ServicePageProps> = ({
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-line/60">
               <button
                 onClick={() => setExportModalOpen(false)}
+                aria-label="Закрыть экспорт" disabled={exportBusy}
                 className="px-4 py-2 rounded-xl bg-shell border border-line text-xs font-medium text-muted hover:text-txt hover:bg-surface-2 transition-all"
               >
                 Закрыть
@@ -1571,7 +1589,7 @@ export const ServicePage: React.FC<ServicePageProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </AccessibleDialog>
       )}
     </div>
   );

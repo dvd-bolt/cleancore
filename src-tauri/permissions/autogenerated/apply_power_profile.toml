@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-apply-power-profile"
+description = "Enables the apply_power_profile command without any pre-configured scope."
+commands.allow = ["apply_power_profile"]
+
+[[permission]]
+identifier = "deny-apply-power-profile"
+description = "Denies the apply_power_profile command without any pre-configured scope."
+commands.deny = ["apply_power_profile"]

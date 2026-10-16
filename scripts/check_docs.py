@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 def is_ignored(path: Path) -> bool:
-    ignored_parts = {".git", "node_modules", "target", "dist", ".cargo", "gen"}
+    ignored_parts = {".git", "node_modules", "target", "dist", ".cargo", "gen", "artifacts", "tmp"}
     return any(part in ignored_parts or part.startswith(".git") for part in path.parts)
 
 def check_file_encodings():

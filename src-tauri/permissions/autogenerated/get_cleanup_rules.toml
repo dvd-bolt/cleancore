@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-cleanup-rules"
+description = "Enables the get_cleanup_rules command without any pre-configured scope."
+commands.allow = ["get_cleanup_rules"]
+
+[[permission]]
+identifier = "deny-get-cleanup-rules"
+description = "Denies the get_cleanup_rules command without any pre-configured scope."
+commands.deny = ["get_cleanup_rules"]

@@ -14,6 +14,11 @@ export default {
           2: '#36393d',
         },
         line: '#484c52',
+        muted: '#c1c4ca',
+        dim: '#a6aab3',
+        warn: '#f5ce88',
+        danger: '#fca5a5',
+        'line-hover': '#777e89',
         txt: {
           DEFAULT: '#f1f2f4',
           muted: '#c1c4ca',
@@ -29,6 +34,10 @@ export default {
         sans: ['"Trebuchet MS"', 'system-ui', 'sans-serif'],
         heading: ['Bahnschrift', '"Trebuchet MS"', 'sans-serif'],
         mono: ['"Cascadia Mono"', 'Consolas', 'monospace'],
+      },
+      fontSize: {
+        xs: ['0.8125rem', { lineHeight: '1.5' }],
+        sm: ['0.875rem', { lineHeight: '1.5' }],
       },
     },
   },

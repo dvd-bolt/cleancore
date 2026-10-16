@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-export-cleanup-journal"
+description = "Enables the export_cleanup_journal command without any pre-configured scope."
+commands.allow = ["export_cleanup_journal"]
+
+[[permission]]
+identifier = "deny-export-cleanup-journal"
+description = "Denies the export_cleanup_journal command without any pre-configured scope."
+commands.deny = ["export_cleanup_journal"]

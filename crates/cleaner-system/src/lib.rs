@@ -2,5 +2,6 @@
 
 pub mod collector;
 pub mod metrics;
+pub mod power;
 pub mod privileges;
 pub mod processes;

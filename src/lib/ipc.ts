@@ -19,6 +19,15 @@ import {
   StartupItem,
   SystemToolId,
   TaskStatus,
+  TreemapData,
+  LargeFileCategory,
+  LargeFileEntry,
+  StaleFileEntry,
+  RecycleBinInfo,
+  DevCacheSummary,
+  PowerProfileKind,
+  PowerProfileStatus,
+  SmartInsight,
 } from "../types";
 
 function normalizeIpcError(error: unknown): Error {
@@ -37,6 +46,11 @@ async function invokeCommand<T>(command: string, args?: Record<string, unknown>)
 export const isTauriEnvironment = (): boolean => {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 };
+
+export async function chooseAnalysisFolder(): Promise<string | null> {
+  if (!isTauriEnvironment()) return null;
+  return invokeCommand<string | null>("choose_analysis_folder");
+}
 
 export async function fetchAppInfo(): Promise<AppInfo> {
   if (isTauriEnvironment()) {
@@ -147,8 +161,38 @@ export async function pingBackend(): Promise<string> {
 function requireDesktopScan(): void {
   if (!isTauriEnvironment()) throw new Error("Сканирование системы доступно только в desktop-приложении.");
 }
-export async function startCleanupScan(categoryId = "user-temp-v1"): Promise<string> {
-  requireDesktopScan(); return invokeCommand("start_cleanup_scan", { categoryId });
+export async function startCleanupScan(categoryId = "user-temp-v1", projectPath?: string): Promise<string> {
+  requireDesktopScan(); return invokeCommand("start_cleanup_scan", { categoryId, projectPath: projectPath ?? null });
+}
+export async function resumeCleanupScan(taskId: string): Promise<string> {
+  requireDesktopScan(); return invokeCommand("resume_cleanup_scan", { taskId });
+}
+export interface CleanupRuleInfo { id: string; name: string; description: string; min_age_days: number; risk_level: string; preview_only: boolean }
+export async function getCleanupRules(): Promise<CleanupRuleInfo[]> {
+  if (!isTauriEnvironment()) return [];
+  return invokeCommand("get_cleanup_rules");
+}
+export async function getCleanupProfileContext(): Promise<string> {
+  requireDesktopScan(); return invokeCommand("get_cleanup_profile_context");
+}
+export interface CleanupPreferences { excluded_paths: string[]; protected_duplicate_roots: string[] }
+export async function getCleanupPreferences(): Promise<CleanupPreferences> {
+  requireDesktopScan(); return invokeCommand("get_cleanup_preferences");
+}
+export async function saveCleanupPreferences(preferences: CleanupPreferences): Promise<void> {
+  requireDesktopScan(); return invokeCommand("save_cleanup_preferences", { preferences });
+}
+export async function clearDuplicateHashCache(): Promise<void> {
+  requireDesktopScan(); return invokeCommand("clear_duplicate_hash_cache");
+}
+export async function prepareDiskFileCleanup(reportId: string, entryId: string): Promise<import("../features/cleanup-execution/types").ExecutionPreview> {
+  requireDesktopScan(); return invokeCommand("prepare_disk_file_cleanup", { reportId, entryId });
+}
+export async function prepareDuplicateCleanup(reportId: string, groupId: string, keeperIndex: number, selectedIndices: number[]): Promise<import("../features/cleanup-execution/types").ExecutionPreview> {
+  requireDesktopScan(); return invokeCommand("prepare_duplicate_cleanup", { reportId, groupId, keeperIndex, selectedIndices });
+}
+export async function invalidateDiskReport(reportId: string): Promise<boolean> {
+  requireDesktopScan(); return invokeCommand("invalidate_disk_report", { reportId });
 }
 export async function getScanProgress(taskId: string): Promise<TaskStatus> {
   requireDesktopScan(); return invokeCommand("get_scan_progress", { taskId });
@@ -164,163 +208,271 @@ export async function fetchQuickDirectories(): Promise<QuickDirectory[]> {
   if (isTauriEnvironment()) {
     return await invokeCommand<QuickDirectory[]>("get_quick_directories");
   }
-  return [
-    { id: "profile", name: "Профиль пользователя", path: "C:\\Users\\User" },
-    { id: "downloads", name: "Загрузки", path: "C:\\Users\\User\\Downloads" },
-    { id: "documents", name: "Документы", path: "C:\\Users\\User\\Documents" },
-    { id: "desktop", name: "Рабочий стол", path: "C:\\Users\\User\\Desktop" },
-    { id: "pictures", name: "Изображения", path: "C:\\Users\\User\\Pictures" },
-    { id: "videos", name: "Видео", path: "C:\\Users\\User\\Videos" },
-  ];
+  return [];
 }
 
 export async function startDiskAnalysis(path: string): Promise<string> {
   if (isTauriEnvironment()) {
     return await invokeCommand<string>("start_disk_analysis", { path });
   }
-  return "demo-disk-task-1";
+  throw new Error("Данные и действия доступны только в desktop-приложении CleanCore.");
 }
 
 export async function getDiskAnalysisProgress(taskId: string): Promise<DiskTaskStatus> {
   if (isTauriEnvironment()) {
     return await invokeCommand<DiskTaskStatus>("get_disk_analysis_progress", { taskId });
   }
-  return {
-    task_id: taskId,
-    kind: "disk_analysis",
-    state: "Completed",
-    progress_message: "Анализ успешно завершён",
-    scanned_items: 1420,
-    scanned_bytes: 54_230_000_000,
-    error_message: null,
-  };
+  throw new Error("Данные и действия доступны только в desktop-приложении CleanCore.");
 }
 
-export async function getDiskAnalysisReport(reportId: string): Promise<DiskAnalysisReport> {
+export async function getDiskAnalysisReport(reportId: string, path?: string): Promise<DiskAnalysisReport> {
   if (isTauriEnvironment()) {
-    return await invokeCommand<DiskAnalysisReport>("get_disk_analysis_report", { reportId });
+    return await invokeCommand<DiskAnalysisReport>("get_disk_analysis_report", path ? { reportId, path } : { reportId });
   }
-  return {
-    root_path: "C:\\Users\\User",
-    total_bytes: 54_230_000_000,
-    total_files: 1420,
-    total_dirs: 85,
-    categories: [
-      { category: "Videos", display_name: "Видео", total_bytes: 25_000_000_000, file_count: 14, percentage: 46.1 },
-      { category: "Images", display_name: "Изображения", total_bytes: 12_000_000_000, file_count: 530, percentage: 22.1 },
-      { category: "Archives", display_name: "Архивы и образы", total_bytes: 8_500_000_000, file_count: 22, percentage: 15.7 },
-      { category: "Documents", display_name: "Документы", total_bytes: 4_200_000_000, file_count: 410, percentage: 7.7 },
-      { category: "Code", display_name: "Код и разметка", total_bytes: 2_530_000_000, file_count: 400, percentage: 4.7 },
-      { category: "Other", display_name: "Прочее", total_bytes: 2_000_000_000, file_count: 44, percentage: 3.7 },
-    ],
-    largest_files: [
-      { path: "C:\\Users\\User\\Videos\\screencast.mp4", name: "screencast.mp4", size_bytes: 8_400_000_000, is_dir: false, file_count: 1, percentage: 15.5, category: "Videos" },
-      { path: "C:\\Users\\User\\Downloads\\archive.iso", name: "archive.iso", size_bytes: 5_200_000_000, is_dir: false, file_count: 1, percentage: 9.6, category: "Archives" },
-      { path: "C:\\Users\\User\\Pictures\\raw_shoot.dng", name: "raw_shoot.dng", size_bytes: 2_100_000_000, is_dir: false, file_count: 1, percentage: 3.9, category: "Images" },
-    ],
-    largest_dirs: [
-      { path: "C:\\Users\\User\\Videos", name: "Videos", size_bytes: 25_000_000_000, is_dir: true, file_count: 14, percentage: 46.1, category: "Videos" },
-      { path: "C:\\Users\\User\\Downloads", name: "Downloads", size_bytes: 14_000_000_000, is_dir: true, file_count: 45, percentage: 25.8, category: "Other" },
-      { path: "C:\\Users\\User\\Pictures", name: "Pictures", size_bytes: 12_000_000_000, is_dir: true, file_count: 530, percentage: 22.1, category: "Images" },
-    ],
-    subdirs: [
-      { path: "C:\\Users\\User\\Videos", name: "Videos", size_bytes: 25_000_000_000, is_dir: true, file_count: 14, percentage: 46.1, category: "Videos" },
-      { path: "C:\\Users\\User\\Downloads", name: "Downloads", size_bytes: 14_000_000_000, is_dir: true, file_count: 45, percentage: 25.8, category: "Other" },
-      { path: "C:\\Users\\User\\Pictures", name: "Pictures", size_bytes: 12_000_000_000, is_dir: true, file_count: 530, percentage: 22.1, category: "Images" },
-      { path: "C:\\Users\\User\\Documents", name: "Documents", size_bytes: 3_230_000_000, is_dir: true, file_count: 831, percentage: 6.0, category: "Documents" },
-    ],
-  };
+  throw new Error("Данные и действия доступны только в desktop-приложении CleanCore.");
+}
+
+export async function getDiskTreemap(reportId: string, path: string, sizeMode: "logical" | "allocated"): Promise<TreemapData> {
+  requireDesktopScan();
+  return invokeCommand("get_disk_treemap", { reportId, path, sizeMode });
+}
+export async function revealDiskEntry(reportId: string, entryId: string): Promise<void> {
+  requireDesktopScan();
+  return invokeCommand("reveal_disk_entry", { reportId, entryId });
 }
 
 export async function startDuplicateScan(path: string): Promise<string> {
   if (isTauriEnvironment()) {
     return await invokeCommand<string>("start_duplicate_scan", { path });
   }
-  return "demo-dup-task-1";
+  throw new Error("Данные и действия доступны только в desktop-приложении CleanCore.");
 }
 
 export async function getDuplicateScanProgress(taskId: string): Promise<DiskTaskStatus> {
   if (isTauriEnvironment()) {
     return await invokeCommand<DiskTaskStatus>("get_duplicate_scan_progress", { taskId });
   }
-  return {
-    task_id: taskId,
-    kind: "duplicate_scan",
-    state: "Completed",
-    progress_message: "Поиск дубликатов успешно завершён",
-    scanned_items: 2,
-    scanned_bytes: 1_200_000_000,
-    error_message: null,
-  };
+  throw new Error("Данные и действия доступны только в desktop-приложении CleanCore.");
 }
 
 export async function getDuplicateReport(reportId: string): Promise<DuplicateScanResult> {
   if (isTauriEnvironment()) {
     return await invokeCommand<DuplicateScanResult>("get_duplicate_report", { reportId });
   }
-  return {
-    root_path: "C:\\Users\\User",
-    groups: [
-      {
-        group_id: "demo-group-1",
-        file_size_bytes: 600_000_000,
-        full_hash: "a4f891b2c3d4e5f678901234567890abcdef1234567890abcdef1234567890ab",
-        reclaimable_bytes: 600_000_000,
-        files: [
-          { path: "C:\\Users\\User\\Downloads\\backup.tar.gz", modified_utc: "2026-10-10T12:00:00Z", size_bytes: 600_000_000 },
-          { path: "C:\\Users\\User\\Documents\\old_backup.tar.gz", modified_utc: "2026-10-10T12:00:00Z", size_bytes: 600_000_000 },
-        ],
-      },
-      {
-        group_id: "demo-group-2",
-        file_size_bytes: 300_000_000,
-        full_hash: "e5d6c7b8a9012345678901234567890abcdef1234567890abcdef1234567890cd",
-        reclaimable_bytes: 600_000_000,
-        files: [
-          { path: "C:\\Users\\User\\Pictures\\wallpaper.png", modified_utc: "2026-09-01T08:30:00Z", size_bytes: 300_000_000 },
-          { path: "C:\\Users\\User\\Desktop\\wallpaper.png", modified_utc: "2026-09-01T08:30:00Z", size_bytes: 300_000_000 },
-          { path: "C:\\Users\\User\\Downloads\\wallpaper(1).png", modified_utc: "2026-09-01T08:30:00Z", size_bytes: 300_000_000 },
-        ],
-      },
-    ],
-    total_wasted_bytes: 1_200_000_000,
-    total_duplicate_files: 5,
-  };
+  throw new Error("Данные и действия доступны только в desktop-приложении CleanCore.");
 }
 
 export async function cancelDiskTask(taskId: string): Promise<boolean> {
   if (isTauriEnvironment()) {
     return await invokeCommand<boolean>("cancel_disk_task", { taskId });
   }
-  return true;
+  throw new Error("Данные и действия доступны только в desktop-приложении CleanCore.");
 }
 
 export async function fetchResourceHistory(): Promise<ResourceHistory> {
   if (isTauriEnvironment()) {
     return await invokeCommand<ResourceHistory>("get_resource_history");
   }
-  const now = Date.now();
-  const timestamps_utc: string[] = [];
-  const cpu_percentages: number[] = [];
-  const memory_percentages: number[] = [];
-  const network_rx_bytes_sec: number[] = [];
-  const network_tx_bytes_sec: number[] = [];
+  return { timestamps_utc: [], cpu_percentages: [], memory_percentages: [], network_rx_bytes_sec: [], network_tx_bytes_sec: [] };
+}
 
-  for (let i = 29; i >= 0; i--) {
-    const t = new Date(now - i * 2000).toISOString();
-    timestamps_utc.push(t);
-    cpu_percentages.push(10 + Math.sin(i / 3) * 8 + (i % 5));
-    memory_percentages.push(42 + Math.cos(i / 4) * 2);
-    network_rx_bytes_sec.push(1024 * (50 + (i % 20) * 10));
-    network_tx_bytes_sec.push(1024 * (20 + (i % 10) * 5));
+export async function fetchSpaceHogs(
+  minSizeMb?: number,
+  category?: LargeFileCategory
+): Promise<LargeFileEntry[]> {
+  if (isTauriEnvironment()) {
+    return await invokeCommand<LargeFileEntry[]>("get_space_hogs", {
+      minSizeMb: minSizeMb ?? 500,
+      category: category ?? null,
+    });
   }
+  return [
+    {
+      id: "demo-1",
+      path: "C:\\Users\\User\\Downloads\\Windows11_x64.iso",
+      size_bytes: 5400000000,
+      allocated_bytes: 5400000000,
+      category: "DiskImage",
+      extension: "iso",
+      is_system_locked: false,
+    },
+    {
+      id: "demo-2",
+      path: "C:\\pagefile.sys",
+      size_bytes: 8589934592,
+      allocated_bytes: 8589934592,
+      category: "Other",
+      extension: "sys",
+      is_system_locked: true,
+    },
+  ];
+}
 
+export async function revealPathInExplorer(path: string): Promise<void> {
+  if (isTauriEnvironment()) {
+    return await invokeCommand<void>("reveal_path_in_explorer", { path });
+  }
+}
+
+export async function fetchStaleFiles(
+  folderPath: string,
+  olderThanDays: number,
+  maxResults?: number
+): Promise<StaleFileEntry[]> {
+  if (isTauriEnvironment()) {
+    return await invokeCommand<StaleFileEntry[]>("get_stale_files", {
+      folderPath,
+      olderThanDays,
+      maxResults: maxResults ?? null,
+    });
+  }
+  return [
+    {
+      path: `${folderPath}\\old_installer_v1.0.exe`,
+      name: "old_installer_v1.0.exe",
+      size_bytes: 420000000,
+      last_modified_utc: "2023-01-15T12:00:00Z",
+      days_old: 620,
+      extension: "exe",
+    },
+    {
+      path: `${folderPath}\\archived_project_2022.zip`,
+      name: "archived_project_2022.zip",
+      size_bytes: 850000000,
+      last_modified_utc: "2022-11-20T08:30:00Z",
+      days_old: 680,
+      extension: "zip",
+    },
+  ];
+}
+
+export async function fetchRecycleBinInfo(): Promise<RecycleBinInfo> {
+  if (isTauriEnvironment()) {
+    return await invokeCommand<RecycleBinInfo>("query_recycle_bin");
+  }
   return {
-    timestamps_utc,
-    cpu_percentages,
-    memory_percentages,
-    network_rx_bytes_sec,
-    network_tx_bytes_sec,
+    total_bytes: 1420000000,
+    item_count: 24,
+  };
+}
+
+export async function emptyRecycleBin(): Promise<RecycleBinInfo> {
+  if (isTauriEnvironment()) {
+    return await invokeCommand<RecycleBinInfo>("empty_recycle_bin");
+  }
+  return {
+    total_bytes: 1420000000,
+    item_count: 24,
+  };
+}
+
+export async function fetchDevCacheSummary(
+  customRoots?: string[],
+  inactiveDays?: number
+): Promise<DevCacheSummary> {
+  if (isTauriEnvironment()) {
+    return await invokeCommand<DevCacheSummary>("get_dev_cache_summary", {
+      customRoots: customRoots ?? null,
+      inactiveDays: inactiveDays ?? null,
+    });
+  }
+  return {
+    total_bytes: 8500000000,
+    node_modules_count: 3,
+    node_modules_bytes: 3200000000,
+    target_count: 2,
+    target_bytes: 2800000000,
+    venv_count: 1,
+    venv_bytes: 500000000,
+    wsl_docker_bytes: 2000000000,
+    entries: [
+      {
+        path: "C:\\Users\\User\\Projects\\old-web-app\\node_modules",
+        name: "old-web-app/node_modules",
+        kind: "node_modules",
+        size_bytes: 1800000000,
+        last_modified_utc: "2023-04-10T11:00:00Z",
+        inactive_days: 550,
+      },
+      {
+        path: "C:\\Users\\User\\source\\rust-tool\\target",
+        name: "rust-tool/target",
+        kind: "target",
+        size_bytes: 2800000000,
+        last_modified_utc: "2023-02-01T15:30:00Z",
+        inactive_days: 620,
+      },
+      {
+        path: "C:\\Users\\User\\AppData\\Local\\Docker\\wsl\\data\\ext4.vhdx",
+        name: "Docker WSL Data (ext4.vhdx)",
+        kind: "wsl_docker",
+        size_bytes: 2000000000,
+        last_modified_utc: "2023-06-01T09:00:00Z",
+        inactive_days: 500,
+      },
+    ],
+  };
+}
+
+export async function fetchPowerProfileState(): Promise<PowerProfileStatus> {
+  if (isTauriEnvironment()) {
+    return await invokeCommand<PowerProfileStatus>("get_power_profile_state");
+  }
+  return {
+    active_scheme: {
+      guid: "381b4222-f694-41f0-9685-ff5bb260df2e",
+      name: "Сбалансированная",
+    },
+    throttles: {
+      max_ac: 100,
+      min_ac: 5,
+      max_dc: 100,
+      min_dc: 5,
+    },
+    current_profile: "Balanced",
+    has_rollback_snapshot: true,
+    last_snapshot_time: "2026-10-16T12:00:00Z",
+  };
+}
+
+export async function applyPowerProfile(profile: PowerProfileKind): Promise<PowerProfileStatus> {
+  if (isTauriEnvironment()) {
+    return await invokeCommand<PowerProfileStatus>("apply_power_profile", { profile });
+  }
+  return {
+    active_scheme: {
+      guid: "381b4222-f694-41f0-9685-ff5bb260df2e",
+      name: "Сбалансированная",
+    },
+    throttles: profile === "Quiet"
+      ? { max_ac: 99, min_ac: 5, max_dc: 99, min_dc: 5 }
+      : profile === "Performance"
+      ? { max_ac: 100, min_ac: 100, max_dc: 100, min_dc: 5 }
+      : { max_ac: 100, min_ac: 5, max_dc: 100, min_dc: 5 },
+    current_profile: profile,
+    has_rollback_snapshot: true,
+    last_snapshot_time: "2026-10-16T12:00:00Z",
+  };
+}
+
+export async function rollbackPowerProfile(): Promise<PowerProfileStatus> {
+  if (isTauriEnvironment()) {
+    return await invokeCommand<PowerProfileStatus>("rollback_power_profile");
+  }
+  return {
+    active_scheme: {
+      guid: "381b4222-f694-41f0-9685-ff5bb260df2e",
+      name: "Сбалансированная",
+    },
+    throttles: {
+      max_ac: 100,
+      min_ac: 5,
+      max_dc: 100,
+      min_dc: 5,
+    },
+    current_profile: "Balanced",
+    has_rollback_snapshot: false,
+    last_snapshot_time: null,
   };
 }
 
@@ -330,175 +482,112 @@ export async function getServicePrograms(): Promise<InstalledProgram[]> {
   if (isTauriEnvironment()) {
     return await invokeCommand<InstalledProgram[]>("list_installed_programs");
   }
-
-  return [
-    {
-      id: "HKLM_64_7Zip",
-      display_name: "7-Zip 24.08 (x64)",
-      publisher: "Igor Pavlov",
-      display_version: "24.08",
-      install_date: "20260115",
-      estimated_size_bytes: 5242880,
-      uninstall_string: "C:\\Program Files\\7-Zip\\Uninstall.exe",
-      quiet_uninstall_string: null,
-      install_location: "C:\\Program Files\\7-Zip",
-      registry_hive: "HKLM",
-      is_wow64: false,
-      is_system_component: false,
-    },
-    {
-      id: "HKCU_64_VSCode",
-      display_name: "Microsoft Visual Studio Code",
-      publisher: "Microsoft Corporation",
-      display_version: "1.95.0",
-      install_date: "20260210",
-      estimated_size_bytes: 380000000,
-      uninstall_string: "C:\\Users\\User\\AppData\\Local\\Programs\\Microsoft VS Code\\unins000.exe",
-      quiet_uninstall_string: null,
-      install_location: "C:\\Users\\User\\AppData\\Local\\Programs\\Microsoft VS Code",
-      registry_hive: "HKCU",
-      is_wow64: false,
-      is_system_component: false,
-    },
-    {
-      id: "HKLM_32_Git",
-      display_name: "Git version 2.47.0",
-      publisher: "The Git Development Community",
-      display_version: "2.47.0",
-      install_date: "20260120",
-      estimated_size_bytes: 320000000,
-      uninstall_string: "C:\\Program Files\\Git\\unins000.exe",
-      quiet_uninstall_string: null,
-      install_location: "C:\\Program Files\\Git",
-      registry_hive: "HKLM",
-      is_wow64: true,
-      is_system_component: false,
-    },
-  ];
+  return [];
 }
 
 export async function launchServiceUninstaller(programId: string): Promise<LaunchResult> {
   if (isTauriEnvironment()) {
-    return await invokeCommand<LaunchResult>("launch_uninstaller", { programId });
+    return await invokeCommand<LaunchResult>("launch_uninstaller_with_residue_context", { programId, acknowledged: true });
   }
-
-  return {
-    success: true,
-    pid: 1234,
-    message: `Штатный деинсталлятор для программы '${programId}' запущен (PID: 1234).`,
-  };
+  throw new Error("Данные и действия доступны только в desktop-приложении CleanCore.");
 }
 
 export async function getServiceStartup(): Promise<StartupItem[]> {
   if (isTauriEnvironment()) {
     return await invokeCommand<StartupItem[]>("list_startup_items");
   }
-
-  return [
-    {
-      id: "HKCU_Run_OneDrive",
-      name: "OneDrive",
-      command: "\"C:\\Users\\User\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe\" /background",
-      source: "registry_run",
-      location: "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-      enabled: true,
-      target_exists: true,
-    },
-    {
-      id: "HKLM_Run_SecurityHealth",
-      name: "SecurityHealth",
-      command: "%windir%\\system32\\SecurityHealthSystray.exe",
-      source: "registry_run",
-      location: "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-      enabled: true,
-      target_exists: true,
-    },
-    {
-      id: "User_Startup_CleanCoreHelper",
-      name: "CleanCoreHelper.lnk",
-      command: "C:\\Users\\User\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\CleanCoreHelper.lnk",
-      source: "startup_folder_user",
-      location: "C:\\Users\\User\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
-      enabled: true,
-      target_exists: false,
-    },
-  ];
+  return [];
 }
 
 export async function getServiceAntivirus(): Promise<AntivirusStatus> {
   if (isTauriEnvironment()) {
     return await invokeCommand<AntivirusStatus>("get_antivirus_status");
   }
-
-  return {
-    state: "protected",
-    providers: [
-      {
-        name: "Windows Defender",
-        product_exe: "C:\\Program Files\\Windows Defender\\MsMpEng.exe",
-        reporting_exe: null,
-        state_code: 397568,
-        real_time_protection: true,
-        definitions_up_to_date: true,
-      },
-    ],
-    defender_service_running: true,
-    message: "Защита активна: Windows Defender включен, сигнатуры актуальны.",
-  };
+  throw new Error("Данные и действия доступны только в desktop-приложении CleanCore.");
 }
 
 export async function getServiceDiagnostics(): Promise<DiagnosticsSummary> {
   if (isTauriEnvironment()) {
     return await invokeCommand<DiagnosticsSummary>("get_system_diagnostics");
   }
-
-  return {
-    health: "healthy",
-    cpu_usage_percent: 18.5,
-    memory_usage_percent: 54,
-    disk_free_bytes: 48_500_000_000,
-    disk_total_bytes: 256_000_000_000,
-    disk_usage_percent: 81,
-    system_drive: "C:",
-    alerts: [
-      {
-        id: "diag_disk_ok",
-        level: "healthy",
-        category: "disk",
-        title: "Свободное место на системном диске",
-        message: "На диске C: свободно 48.5 ГБ (19%).",
-        recommendation: null,
-      },
-    ],
-    recommendations: [
-      "Система функционирует штатно, критических предупреждений нет.",
-    ],
-    timestamp_utc: new Date().toISOString(),
-  };
+  throw new Error("Данные и действия доступны только в desktop-приложении CleanCore.");
 }
 
 export async function launchServiceTool(toolId: SystemToolId): Promise<LaunchResult> {
   if (isTauriEnvironment()) {
     return await invokeCommand<LaunchResult>("launch_system_tool", { toolId });
   }
-
-  return {
-    success: true,
-    pid: 5678,
-    message: `Штатная системная утилита '${toolId}' успешно запущена (PID: 5678).`,
-  };
+  throw new Error("Данные и действия доступны только в desktop-приложении CleanCore.");
 }
 
 export async function exportServiceCsv(config: CsvExportConfig): Promise<string> {
   if (isTauriEnvironment()) {
     return await invokeCommand<string>("generate_csv_report", { config });
   }
-
-  return (
-    "\uFEFF\"ОТЧЁТ ЦЕНТРА ОБСЛУЖИВАНИЯ CLEANCORE\"\r\n\"Дата формирования (UTC)\",\"" +
-    new Date().toISOString() +
-    "\"\r\n\r\n\"[РАЗДЕЛ: ДИАГНОСТИКА И ЗДОРОВЬЕ СИСТЕМЫ]\"\r\n\"Общее состояние здоровья\",\"Штатное (Healthy)\"\r\n"
-  );
+  throw new Error("Данные и действия доступны только в desktop-приложении CleanCore.");
 }
 
+
+
+export async function saveServiceCsv(config: CsvExportConfig): Promise<string | null> {
+  if (!isTauriEnvironment()) throw new Error("Сохранение доступно только в desktop-приложении.");
+  return invokeCommand<string | null>("save_csv_report", { config: { ...config, target_path: null } });
+}
+
+export interface StorageResilienceStatus {
+  db_path: string; settings_path: string; schema_version: number;
+  database_persistent: boolean; settings_persistent: boolean;
+  db_recovered: boolean; settings_recovered: boolean;
+  db_recovery_notice: { quarantined_path: string; reason: string } | null;
+  settings_recovery_notice: { quarantined_path: string; reason: string } | null;
+}
+export async function fetchStorageResilience(): Promise<StorageResilienceStatus | null> {
+  return isTauriEnvironment() ? invokeCommand<StorageResilienceStatus>("get_storage_resilience_status") : null;
+}
+
+export async function exportCleanupJournal(): Promise<string | null> {
+  if (!isTauriEnvironment()) throw new Error("Журнал доступен только в desktop-приложении.");
+  return invokeCommand<string | null>("export_cleanup_journal");
+}
+
+
+export async function setStartupEnabled(itemId:string,expectedCommand:string,enabled:boolean):Promise<void> {
+  if(!isTauriEnvironment()) throw new Error("Изменение автозагрузки доступно в приложении Windows");
+  return invokeCommand<void>("set_startup_enabled",{itemId,expectedCommand,enabled,acknowledged:true});
+}
+
+export async function inspectAppResidue(contextId: string): Promise<import("../types").AppResidueReport> {
+  requireDesktopScan(); return invokeCommand("inspect_app_residue", { contextId });
+}
+
+export async function fetchSmartInsights(params?: {
+  processes?: string[];
+  cpuUsage?: number;
+  memoryUsage?: number;
+  diskFreeBytes?: number;
+  diskTotalBytes?: number;
+}): Promise<SmartInsight[]> {
+  if (isTauriEnvironment()) {
+    return await invokeCommand<SmartInsight[]>("get_smart_insights", {
+      processes: params?.processes,
+      cpuUsage: params?.cpuUsage,
+      memoryUsage: params?.memoryUsage,
+      diskFreeBytes: params?.diskFreeBytes,
+      diskTotalBytes: params?.diskTotalBytes,
+    });
+  }
+  return [
+    {
+      id: "all_systems_optimal",
+      title: "Система в оптимальном состоянии",
+      description: "Свободное место в норме, системная Корзина не переполнена, параметры электропитания сбалансированы.",
+      category: "system",
+      level: "info",
+      estimatedSavings: null,
+      actionLabel: "Центр обслуживания",
+      targetPage: "service",
+      targetTab: null,
+    },
+  ];
+}
 

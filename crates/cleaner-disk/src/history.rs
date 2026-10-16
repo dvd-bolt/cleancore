@@ -3,18 +3,21 @@
 use cleaner_core::models::{FieldValue, MetricSnapshot};
 use std::collections::VecDeque;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use crate::models::ResourceHistory;
 
-const MAX_HISTORY_SAMPLES: usize = 600; // 600 замеров (10 минут при интервале 1с или 20 минут при 2с)
+const MAX_HISTORY_SAMPLES: usize = 1201; // 10 minutes at the minimum 500 ms interval.
+const HISTORY_WINDOW: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Clone)]
 struct HistoricalSample {
+    recorded_at: Instant,
     timestamp_utc: String,
-    cpu_percent: f32,
-    memory_percent: f32,
-    network_rx_bytes_sec: u64,
-    network_tx_bytes_sec: u64,
+    cpu_percent: Option<f32>,
+    memory_percent: Option<f32>,
+    network_rx_bytes_sec: Option<u64>,
+    network_tx_bytes_sec: Option<u64>,
 }
 
 pub struct ResourceHistoryTracker {
@@ -36,22 +39,29 @@ impl ResourceHistoryTracker {
 
     /// Регистрирует очередной срез метрик системы.
     pub fn record_snapshot(&self, snapshot: &MetricSnapshot) {
+        self.record_at(snapshot, Instant::now());
+    }
+
+    fn record_at(&self, snapshot: &MetricSnapshot, now: Instant) {
         let cpu_val = match &snapshot.cpu {
-            FieldValue::Available(m) => m.total_usage_percent,
-            _ => 0.0,
+            FieldValue::Available(m) if m.total_usage_percent.is_finite() => {
+                Some(m.total_usage_percent)
+            }
+            _ => None,
         };
 
         let mem_val = match &snapshot.memory {
-            FieldValue::Available(m) => m.usage_percent as f32,
-            _ => 0.0,
+            FieldValue::Available(m) => Some(m.usage_percent as f32),
+            _ => None,
         };
 
         let (rx, tx) = match &snapshot.network {
-            FieldValue::Available(m) => (m.rx_bytes_per_sec, m.tx_bytes_per_sec),
-            _ => (0, 0),
+            FieldValue::Available(m) => (Some(m.rx_bytes_per_sec), Some(m.tx_bytes_per_sec)),
+            _ => (None, None),
         };
 
         let sample = HistoricalSample {
+            recorded_at: now,
             timestamp_utc: snapshot.timestamp_utc.clone(),
             cpu_percent: cpu_val,
             memory_percent: mem_val,
@@ -60,6 +70,7 @@ impl ResourceHistoryTracker {
         };
 
         let mut samples = self.samples.lock().unwrap();
+        prune(&mut samples, now);
         if samples.len() >= MAX_HISTORY_SAMPLES {
             samples.pop_front();
         }
@@ -68,7 +79,8 @@ impl ResourceHistoryTracker {
 
     /// Возвращает агрегированную историю ресурсов для отображения графиков нагрузки.
     pub fn get_history(&self) -> ResourceHistory {
-        let samples = self.samples.lock().unwrap();
+        let mut samples = self.samples.lock().unwrap();
+        prune(&mut samples, Instant::now());
 
         let mut timestamps_utc = Vec::with_capacity(samples.len());
         let mut cpu_percentages = Vec::with_capacity(samples.len());
@@ -94,6 +106,15 @@ impl ResourceHistoryTracker {
     }
 }
 
+fn prune(samples: &mut VecDeque<HistoricalSample>, now: Instant) {
+    while samples
+        .front()
+        .is_some_and(|sample| now.saturating_duration_since(sample.recorded_at) > HISTORY_WINDOW)
+    {
+        samples.pop_front();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,8 +124,10 @@ mod tests {
     fn test_history_tracker_records_and_bounds() {
         let tracker = ResourceHistoryTracker::new();
 
-        for i in 0..650 {
+        for i in 0..1250 {
             let snapshot = MetricSnapshot {
+                disks: Vec::new(),
+                network_interfaces: Vec::new(),
                 timestamp_utc: format!("2026-10-14T12:{i:02}:00Z"),
                 interval_ms: 1000,
                 cpu: FieldValue::Available(CpuMetrics {
@@ -123,6 +146,7 @@ mod tests {
                     tx_bytes_per_sec: 2048,
                     interface_name: Some("Ethernet".into()),
                 }),
+                power: None,
             };
             tracker.record_snapshot(&snapshot);
         }
@@ -130,9 +154,32 @@ mod tests {
         let history = tracker.get_history();
         assert_eq!(history.timestamps_utc.len(), MAX_HISTORY_SAMPLES);
         assert_eq!(history.cpu_percentages.len(), MAX_HISTORY_SAMPLES);
-        assert_eq!(history.cpu_percentages[0], 25.0);
-        assert_eq!(history.memory_percentages[0], 50.0);
-        assert_eq!(history.network_rx_bytes_sec[0], 1024);
-        assert_eq!(history.network_tx_bytes_sec[0], 2048);
+        assert_eq!(history.cpu_percentages[0], Some(25.0));
+        assert_eq!(history.memory_percentages[0], Some(50.0));
+        assert_eq!(history.network_rx_bytes_sec[0], Some(1024));
+        assert_eq!(history.network_tx_bytes_sec[0], Some(2048));
+    }
+
+    #[test]
+    fn unavailable_values_are_null_and_window_is_time_based() {
+        let tracker = ResourceHistoryTracker::new();
+        let snapshot = MetricSnapshot {
+            disks: Vec::new(),
+            network_interfaces: Vec::new(),
+            timestamp_utc: "2026-10-14T12:00:00Z".into(),
+            interval_ms: 60_000,
+            cpu: FieldValue::NotMeasured,
+            memory: FieldValue::AccessDenied,
+            disk: FieldValue::NotMeasured,
+            network: FieldValue::Unavailable("offline".into()),
+            power: None,
+        };
+        let now = Instant::now();
+        tracker.record_at(&snapshot, now - Duration::from_secs(601));
+        tracker.record_at(&snapshot, now);
+        let history = tracker.get_history();
+        assert_eq!(history.timestamps_utc.len(), 1);
+        assert_eq!(history.cpu_percentages, vec![None]);
+        assert_eq!(history.network_rx_bytes_sec, vec![None]);
     }
 }

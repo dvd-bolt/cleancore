@@ -6,6 +6,8 @@
 //! - `scanner`: потоковый безопасный обход файлов с возрастным фильтром (7 дней) и отменой.
 //! - `tasks`: управление жизненным циклом задач сканирования и порционной выдачей preview.
 
+pub mod general;
+pub mod manual;
 pub mod path_safety;
 pub mod rules;
 pub mod scanner;

@@ -1,0 +1,75 @@
+name: Windows release candidate
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 12.11.2
+      - name: Install pinned Rust and components
+        run: rustup show
+      - run: pnpm install --frozen-lockfile
+      - run: python scripts/check_release.py --versions-only
+      - run: python scripts/check_docs.py
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - run: pnpm lint
+      - run: pnpm test
+      - name: Inventory and preserve licenses
+        run: |
+          cargo metadata --locked --format-version 1 --filter-platform x86_64-pc-windows-msvc > cargo-metadata.json
+          pnpm licenses list --json > frontend-licenses.json
+          python scripts/prepare_notices.py --rust-metadata cargo-metadata.json --frontend-licenses frontend-licenses.json
+      - name: Build offline installer (no publishing)
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        with:
+          tauriScript: pnpm tauri
+          args: --config src-tauri/tauri.release.conf.json --bundles nsis
+      - name: Checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem target/release/bundle/nsis/*.exe | ForEach-Object {
+            $digest = Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256
+            "$($digest.Hash.ToLower())  $($_.Name)" | Add-Content -Path artifacts/SHA256SUMS.txt -Encoding utf8
+          }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: CleanCore-windows-x64-candidate
+          if-no-files-found: error
+          path: |
+            target/release/bundle/nsis/*.exe
+            artifacts/SHA256SUMS.txt
+            artifacts/legal/
+            docs/RELEASE.md
+            docs/release-acceptance.json
+
+  audit:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 12.11.2
+      - run: pnpm install --frozen-lockfile
+      - run: cargo install cargo-audit --locked --version 0.22.1
+      - run: cargo audit --deny warnings
+      - run: pnpm audit --audit-level moderate
+      - name: Verify product acceptance evidence
+        run: python scripts/check_release.py

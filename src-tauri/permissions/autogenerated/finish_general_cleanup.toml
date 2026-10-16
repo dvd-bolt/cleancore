@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-finish-general-cleanup"
+description = "Enables the finish_general_cleanup command without any pre-configured scope."
+commands.allow = ["finish_general_cleanup"]
+
+[[permission]]
+identifier = "deny-finish-general-cleanup"
+description = "Denies the finish_general_cleanup command without any pre-configured scope."
+commands.deny = ["finish_general_cleanup"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-assistant-prepare-context"
+description = "Enables the assistant_prepare_context command without any pre-configured scope."
+commands.allow = ["assistant_prepare_context"]
+
+[[permission]]
+identifier = "deny-assistant-prepare-context"
+description = "Denies the assistant_prepare_context command without any pre-configured scope."
+commands.deny = ["assistant_prepare_context"]

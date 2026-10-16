@@ -15,20 +15,19 @@ export const CleanupCard: React.FC<CleanupCardProps> = ({ onOpenCleanup }) => {
         <div className="flex items-center justify-between mb-3">
           <span className="text-[10px] font-mono tracking-widest text-dim uppercase flex items-center gap-1.5">
             <Sparkles className="w-3 h-3 text-accent" />
-            Освободи пространство
+            Очистка файлов
           </span>
           <span className="text-[10px] font-mono text-dim px-2 py-0.5 rounded bg-shell border border-line">
-            STEP 01
+            Анализ
           </span>
         </div>
 
         <h3 className="font-heading text-lg font-bold text-txt leading-snug mb-1">
-          Сначала посмотреть. <br />
-          Потом решить.
+          Проверить временные файлы
         </h3>
 
         <p className="text-xs text-muted leading-relaxed mb-4">
-          Безопасный анализ временных файлов без риска: находите кандидатов без удаления.
+          Анализ покажет ненужные файлы. Удаление доступно только после выбора и подтверждения.
         </p>
       </div>
 

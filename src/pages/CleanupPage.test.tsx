@@ -1,0 +1,40 @@
+// @vitest-environment jsdom
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { beforeEach, afterEach, it, expect, vi } from "vitest";
+import { CleanupPage } from "./CleanupPage";
+import * as execution from "../features/cleanup-execution/ipc";
+vi.mock("../lib/ipc", () => ({ isTauriEnvironment: () => true, getCleanupRules: async () => [{ id: "user-temp-v1", name: "Temp", description: "Собственный тест", min_age_days: 7, preview_only: false }], getCleanupProfileContext: async () => "C:\\Users\\owned\\AppData\\Local", launchServiceTool: vi.fn() }));
+vi.mock("../features/cleanup-execution/ipc", () => ({ getExecutionPreview: vi.fn() }));
+vi.mock("../features/cleanup-scan/useCleanupScan", () => ({ PAGE_SIZE: 15, useCleanupScan: () => scan }));
+vi.mock("../features/cleanup-execution/CleanupExecutionPanel", () => ({ CleanupExecutionPanel: ({ selectedIds, onCompleted }: { selectedIds: string[]; onCompleted: () => void }) => <div><output aria-label="Выбранные ID">{selectedIds.join(",")}</output><button onClick={onCompleted}>Завершить тестовую партию</button></div> }));
+const scan = { taskId: "scan", status: null, scanning: false, loading: false, page: 0, setPage: vi.fn(), query: "", search: vi.fn(), error: null, start: vi.fn(), cancel: vi.fn(), resume: vi.fn(), preview: { preview_id: "scan", category_id: "user-temp-v1", complete: false, cancelled: false, batch_ready: true, resumable: true, execution_preview_id: "execution", unfiltered_candidates: 2, total_candidates: 2, total_bytes: "20", diagnostics: {}, items: [{ obj_id: "a", display_path: "owned.tmp", size_bytes: "10", reason: "test" }] } };
+let container: HTMLDivElement, root: Root;
+beforeEach(() => { vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); vi.clearAllMocks(); container = document.createElement("div"); document.body.append(container); root = createRoot(container); });
+afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
+it("offers a general analysis and hides the previous category's execution controls", async () => {
+  await act(async () => root.render(<CleanupPage/>));
+  const select = container.querySelector('select[aria-label="Категория анализа"]') as HTMLSelectElement;
+  await act(async () => { select.value = "general"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(container.textContent).toContain("Запустить общий анализ");
+  expect(container.textContent).toContain("Кеши проектов проверяются отдельно");
+  expect(container.querySelector("output")).toBeNull();
+  expect(container.textContent).not.toContain("Выбрать всю партию");
+  expect(scan.start).not.toHaveBeenCalled();
+});
+it("requires partial acknowledgement and an explicit bulk selection, then disables consumed batch", async () => {
+  vi.mocked(execution.getExecutionPreview).mockResolvedValue({ preview_id: "execution", category: "user-temp-v1", rule_version: 1, expires_at_ms: Date.now() + 10000, candidates: ["a", "b"].map(id => ({ object_id: id, display_path: id, size_bytes: "10", reason: "fixture" })) });
+  await act(async () => root.render(<CleanupPage/>));
+  const bulk = () => Array.from(container.querySelectorAll("button")).find(b => b.textContent?.startsWith("Выбрать всю партию"))!;
+  expect(bulk().disabled).toBe(true);
+  expect(execution.getExecutionPreview).not.toHaveBeenCalled();
+  await act(async () => (container.querySelector('input[type="checkbox"]') as HTMLInputElement).click());
+  expect(bulk().disabled).toBe(false);
+  await act(async () => bulk().click());
+  expect(execution.getExecutionPreview).toHaveBeenCalledWith("execution");
+  expect(container.querySelector("output")?.textContent).toBe("a,b");
+  await act(async () => Array.from(container.querySelectorAll("button")).find(b => b.textContent === "Завершить тестовую партию")!.click());
+  expect(bulk().disabled).toBe(true);
+  expect(container.querySelector("output")?.textContent).toBe("");
+  expect(container.textContent).toContain("Партия обработана");
+});

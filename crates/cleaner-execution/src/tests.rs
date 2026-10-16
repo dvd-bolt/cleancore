@@ -62,11 +62,16 @@ impl ObjectAction for Action {
 }
 fn candidate(name: &str) -> TrustedCandidate {
     TrustedCandidate {
+        minimum_age_ms: MIN_AGE_MS,
+        blocked_process: None,
+        directory: false,
+        copy_guard: None,
         id: name.into(),
         root: "C:\\test-only".into(),
         relative: name.into(),
         identity: ObjectIdentity {
             volume: 1,
+            file_id: [0; 16],
             index: 1,
             size: 42,
             modified_ticks: 116_444_736_000_000_000,
@@ -349,4 +354,19 @@ mod windows {
             "REPARSE_POINT"
         );
     }
+}
+
+#[test]
+fn repeated_readonly_previews_do_not_exhaust_registry_and_preserve_prepared_confirmation() {
+    let (service, _, _, first) = setup(|_| {});
+    let token = confirmation(&service, &first);
+    let base = now_ms() + 100;
+    for i in 0..12 {
+        service
+            .publish_at(vec![candidate(&format!("peek-{i}"))], base + i)
+            .unwrap();
+    }
+    assert!(service.preview(&first.preview_id).unwrap().is_some());
+    let started = service.begin(&token.confirmation_id, true).unwrap();
+    service.run(&started.operation_id).unwrap();
 }

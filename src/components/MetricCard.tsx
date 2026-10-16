@@ -10,6 +10,7 @@ interface MetricCardProps {
   unit: string;
   subText?: string;
   progressPercent?: number;
+  progressLabel?: string;
 }
 
 export const MetricCard: React.FC<MetricCardProps> = ({
@@ -21,6 +22,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   unit,
   subText,
   progressPercent,
+  progressLabel,
 }) => {
   const getStatusLabel = () => {
     switch (field.status) {
@@ -69,7 +71,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
             {getStatusLabel()}
           </span>
           {isAvailable && progressPercent !== undefined && (
-            <span className="font-mono text-[10px] text-muted">{progressPercent}%</span>
+            <span className="font-mono text-[10px] text-muted">{progressLabel ? `${progressLabel}: ` : ""}{progressPercent.toFixed(0)}%</span>
           )}
         </div>
 

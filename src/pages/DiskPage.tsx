@@ -1,4 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { DiskTreemap } from "../features/disk-map/DiskTreemap";
+import { DuplicateActions } from "../features/disk-map/DuplicateActions";
+import { SpaceHogsTable } from "../features/disk-map/SpaceHogsTable";
+import { StaleFilesView } from "../features/disk-map/StaleFilesView";
 import {
   DiskAnalysisReport,
   DiskTaskStatus,
@@ -9,6 +13,8 @@ import {
 } from "../types";
 import {
   cancelDiskTask,
+  chooseAnalysisFolder,
+  isTauriEnvironment,
   fetchQuickDirectories,
   fetchResourceHistory,
   getDiskAnalysisProgress,
@@ -30,6 +36,7 @@ import {
   Music,
   Code2,
   Package,
+  Boxes,
   Search,
   Copy,
   Activity,
@@ -40,9 +47,10 @@ import {
   ShieldCheck,
   TrendingUp,
   Clock,
+  History,
 } from "lucide-react";
 
-type DiskTab = "map" | "duplicates" | "history";
+type DiskTab = "map" | "duplicates" | "space_hogs" | "stale" | "history";
 
 const CATEGORY_COLORS: Record<FileCategory, { bg: string; text: string; hex: string }> = {
   Videos: { bg: "bg-sky-500", text: "text-sky-400", hex: "#0ea5e9" },
@@ -89,12 +97,14 @@ export const DiskPage: React.FC = () => {
   const [customPath, setCustomPath] = useState<string>("");
 
   // Состояние анализа диска
-  const [diskTaskId, setDiskTaskId] = useState<string | null>(null);
+  const [diskTaskId, setDiskTaskId] = useState<string | null>(() => sessionStorage.getItem("cleancore-disk-task"));
+  const [directoryPage,setDirectoryPage]=useState(0);
   const [diskTaskStatus, setDiskTaskStatus] = useState<DiskTaskStatus | null>(null);
   const [diskReport, setDiskReport] = useState<DiskAnalysisReport | null>(null);
+  const [browsingDirectory, setBrowsingDirectory] = useState(false);
 
   // Состояние поиска дубликатов
-  const [dupTaskId, setDupTaskId] = useState<string | null>(null);
+  const [dupTaskId, setDupTaskId] = useState<string | null>(() => sessionStorage.getItem("cleancore-dup-task"));
   const [dupTaskStatus, setDupTaskStatus] = useState<DiskTaskStatus | null>(null);
   const [dupReport, setDupReport] = useState<DuplicateScanResult | null>(null);
 
@@ -135,7 +145,7 @@ export const DiskPage: React.FC = () => {
     let cancelled = false;
 
     async function poll() {
-      if (cancelled || isPollingRef.current) return;
+      if (cancelled) return;
       isPollingRef.current = true;
       try {
         const status = await getDiskAnalysisProgress(diskTaskId!);
@@ -149,12 +159,20 @@ export const DiskPage: React.FC = () => {
             setDiskTaskId(null);
           }
         } else if (status.state === "Failed" || status.state === "Cancelled") {
+          if(status.state==="Cancelled") {
+            const report=await getDiskAnalysisReport(diskTaskId!);
+            if(cancelled)return;
+            setDiskReport(report);
+          }
+          setErrorMessage(status.error_message || (status.state === "Cancelled" ? "Анализ отменён. Ниже сохранена прочитанная часть." : "Не удалось завершить анализ"));
+          if(status.state==="Failed") sessionStorage.removeItem("cleancore-disk-task");
           setDiskTaskId(null);
         } else {
           timer = setTimeout(poll, 700);
         }
       } catch (err) {
         if (!cancelled) {
+          sessionStorage.removeItem("cleancore-disk-task");
           setErrorMessage(err instanceof Error ? err.message : String(err));
           setDiskTaskId(null);
         }
@@ -178,7 +196,7 @@ export const DiskPage: React.FC = () => {
     let cancelled = false;
 
     async function poll() {
-      if (cancelled || isPollingRef.current) return;
+      if (cancelled) return;
       isPollingRef.current = true;
       try {
         const status = await getDuplicateScanProgress(dupTaskId!);
@@ -192,12 +210,15 @@ export const DiskPage: React.FC = () => {
             setDupTaskId(null);
           }
         } else if (status.state === "Failed" || status.state === "Cancelled") {
+          setErrorMessage(status.error_message || (status.state === "Cancelled" ? "Поиск отменён" : "Не удалось завершить поиск"));
+          sessionStorage.removeItem("cleancore-dup-task");
           setDupTaskId(null);
         } else {
           timer = setTimeout(poll, 700);
         }
       } catch (err) {
         if (!cancelled) {
+          sessionStorage.removeItem("cleancore-dup-task");
           setErrorMessage(err instanceof Error ? err.message : String(err));
           setDupTaskId(null);
         }
@@ -232,17 +253,39 @@ export const DiskPage: React.FC = () => {
     }
   }, [activeTab, loadHistory]);
 
-  const handleStartDiskAnalysis = async () => {
-    const target = customPath.trim() || selectedPath;
+  const handleStartDiskAnalysis = async (path?: string) => {
+    const target = path || customPath.trim() || selectedPath;
     if (!target) return;
     setErrorMessage(null);
     setDiskReport(null);
     try {
       const taskId = await startDiskAnalysis(target);
+      sessionStorage.removeItem("cleancore-dup-task");
+      sessionStorage.setItem("cleancore-disk-task",taskId);
+      setCustomPath(target);setSelectedPath(target);setDirectoryPage(0);
       setDiskTaskId(taskId);
       setActiveTab("map");
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const browseDirectory = async (path: string) => {
+    const reportId = sessionStorage.getItem("cleancore-disk-task");
+    if (diskReport?.engine !== "ntfs-mft" || !reportId) {
+      await handleStartDiskAnalysis(path);
+      return;
+    }
+    setBrowsingDirectory(true);
+    setErrorMessage(null);
+    try {
+      const report = await getDiskAnalysisReport(reportId, path);
+      setDiskReport(report);
+      setDirectoryPage(0);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBrowsingDirectory(false);
     }
   };
 
@@ -253,6 +296,8 @@ export const DiskPage: React.FC = () => {
     setDupReport(null);
     try {
       const taskId = await startDuplicateScan(target);
+      sessionStorage.removeItem("cleancore-disk-task");
+      sessionStorage.setItem("cleancore-dup-task",taskId);
       setDupTaskId(taskId);
       setActiveTab("duplicates");
     } catch (err) {
@@ -268,6 +313,16 @@ export const DiskPage: React.FC = () => {
     }
   };
 
+  const [choosingFolder, setChoosingFolder] = useState(false);
+  async function chooseFolder() {
+    if (choosingFolder) return;
+    setChoosingFolder(true);
+    try {
+      const path = await chooseAnalysisFolder();
+      if (path) { setSelectedPath(path); setCustomPath(path); setErrorMessage(null); }
+    } catch (e) { setErrorMessage(e instanceof Error ? e.message : String(e)); }
+    finally { setChoosingFolder(false); }
+  }
   const currentTargetPath = customPath.trim() || selectedPath;
 
   return (
@@ -280,9 +335,7 @@ export const DiskPage: React.FC = () => {
             <h1 className="font-heading text-xl font-bold tracking-tight text-txt">
               Анализ диска и дубликатов
             </h1>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-accent/10 border border-accent/30 text-accent uppercase">
-              Модуль 5.1–5.6
-            </span>
+
           </div>
           <p className="text-xs text-muted mt-1">
             Безопасная инспекция структуры каталогов, категорийный срез и поиск доказанных дубликатов без автоматического удаления
@@ -319,6 +372,28 @@ export const DiskPage: React.FC = () => {
             )}
           </button>
           <button
+            onClick={() => setActiveTab("space_hogs")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              activeTab === "space_hogs"
+                ? "bg-accent text-accent-ink font-semibold shadow-sm"
+                : "text-muted hover:text-txt hover:bg-surface-2"
+            }`}
+          >
+            <Boxes className="w-3.5 h-3.5" />
+            <span>Крупные файлы</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("stale")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              activeTab === "stale"
+                ? "bg-accent text-accent-ink font-semibold shadow-sm"
+                : "text-muted hover:text-txt hover:bg-surface-2"
+            }`}
+          >
+            <History className="w-3.5 h-3.5" />
+            <span>Забытые файлы</span>
+          </button>
+          <button
             onClick={() => setActiveTab("history")}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
               activeTab === "history"
@@ -327,7 +402,7 @@ export const DiskPage: React.FC = () => {
             }`}
           >
             <Clock className="w-3.5 h-3.5" />
-            <span>История (10 мин)</span>
+            <span>Графики за 10 минут</span>
           </button>
         </div>
       </div>
@@ -340,7 +415,7 @@ export const DiskPage: React.FC = () => {
             Выбор исследуемого каталога
           </span>
           <span className="text-[11px] text-muted font-mono">
-            Только чтение метаданных • Без UAC
+            Анализ читает метаданные • Изменения требуют подтверждения
           </span>
         </div>
 
@@ -371,10 +446,11 @@ export const DiskPage: React.FC = () => {
         )}
 
         {/* Custom Path Input and Scan Trigger Buttons */}
-        <div className="flex flex-col sm:flex-row items-center gap-3">
+        <div className="flex flex-col lg:flex-row items-stretch gap-3">
           <div className="relative flex-1 w-full">
             <input
               type="text"
+              aria-label="Путь к папке или диску для анализа"
               value={customPath}
               onChange={(e) => setCustomPath(e.target.value)}
               placeholder="C:\Users\Username..."
@@ -382,9 +458,10 @@ export const DiskPage: React.FC = () => {
             />
           </div>
 
+          <button onClick={() => void chooseFolder()} title={!isTauriEnvironment() ? "Выбор папки доступен в установленном приложении" : "Выберите папку, затем отдельно запустите анализ"} disabled={!isTauriEnvironment() || choosingFolder || Boolean(diskTaskId || dupTaskId)} className="shrink-0 border border-line rounded-lg px-3 py-2 text-sm disabled:opacity-40">{choosingFolder ? "Выбор папки…" : "Выбрать папку…"}</button>
           <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
             <button
-              onClick={handleStartDiskAnalysis}
+              onClick={()=>handleStartDiskAnalysis()}
               disabled={Boolean(diskTaskId || dupTaskId || !currentTargetPath)}
               className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-accent text-accent-ink text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
             >
@@ -466,6 +543,15 @@ export const DiskPage: React.FC = () => {
         <div className="space-y-6">
           {diskReport ? (
             <>
+              <p className="text-xs text-muted break-all">Отчёт: {diskReport.root_path}</p>
+              <div className="text-xs text-muted space-y-1">
+                <p>{diskReport.engine === "ntfs-mft" ? "Быстрый анализ NTFS · MFT" : "Обычный обход каталогов"}{diskReport.elapsed_ms !== undefined ? ` · ${(diskReport.elapsed_ms / 1000).toFixed(2)} с` : ""}</p>
+                {diskReport.engine_note && <p role="status">Быстрый анализ недоступен: {diskReport.engine_note}</p>}
+                {diskReport.allocated_bytes != null && <p>Выделено под данные файлов: {formatBytes(diskReport.allocated_bytes)}. Занято на томе Windows: {formatBytes(diskReport.volume_used_bytes ?? 0)}.</p>}
+                {diskReport.engine === "ntfs-mft" && <p>Снимок работающего диска. Жёсткие ссылки учтены один раз; именованные потоки и служебные структуры вне данных файлов в сумму не входят.</p>}
+                {!!Object.keys(diskReport.warnings ?? {}).length && <details><summary>Особенности учёта</summary>{Object.entries(diskReport.warnings ?? {}).map(([code, count]) => <p key={code}>{diskSkipReason(code)}: {count}</p>)}</details>}
+              </div>
+              {!diskReport.complete && <div role="status" className="border border-amber-500/40 rounded-xl p-4 text-sm text-amber-200">Частичный результат. Недоступные каталоги, ссылки или объекты за пределами лимитов пропущены. Показан размер прочитанных файлов, а не всего занятого места.<details className="mt-2"><summary>Причины пропусков</summary>{Object.entries(diskReport.diagnostics).map(([code,count])=><p key={code}>{diskSkipReason(code)}: {count}</p>)}</details></div>}
               {/* Summary Stats Row */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-surface border border-line rounded-xl p-4 shadow-sm">
@@ -488,7 +574,7 @@ export const DiskPage: React.FC = () => {
                     {diskReport.total_files.toLocaleString("ru-RU")}
                   </div>
                   <span className="text-[11px] text-dim font-mono">
-                    проверено на reparse points
+                    учтено в текущем отчёте
                   </span>
                 </div>
 
@@ -506,6 +592,19 @@ export const DiskPage: React.FC = () => {
               </div>
 
               {/* Categorical Breakdown Bar */}
+              <DiskTreemap report={diskReport} reportId={sessionStorage.getItem("cleancore-disk-task")} onNavigate={path => void browseDirectory(path)} />
+              <details className="border border-line rounded-xl"><summary className="px-5 py-3 text-sm cursor-pointer">Список подпапок · {diskReport.subdirs.length}</summary>
+              <section className="bg-surface border border-line rounded-xl p-5 space-y-3" aria-label="Все подпапки">
+                <h2 className="font-semibold">Подпапки · {diskReport.subdirs.length}</h2>
+                {diskReport.engine === "ntfs-mft" && diskReport.root_path.replace(/\//g, "\\").length > 3 && <button disabled={browsingDirectory} className="text-sm text-accent" onClick={() => {
+                  const current = diskReport.root_path.replace(/\//g, "\\").replace(/\\+$/, "");
+                  void browseDirectory(current.slice(0, current.lastIndexOf("\\") + 1));
+                }}>На уровень выше</button>}
+                <p className="text-xs text-muted">Нажмите на папку, чтобы изучить её содержимое.</p>
+                {diskReport.subdirs.slice(directoryPage*50,(directoryPage+1)*50).map(dir=><button key={dir.path} disabled={browsingDirectory||!!diskTaskId||!!dupTaskId} onClick={()=>void browseDirectory(dir.path)} className="w-full flex justify-between gap-4 text-left border-b border-line py-2 text-sm"><span className="truncate">{dir.name}</span><span className="shrink-0 font-mono">{formatBytes(dir.size_bytes)}</span></button>)}
+                <div className="flex gap-3 items-center text-xs"><button disabled={!directoryPage} onClick={()=>setDirectoryPage(p=>p-1)}>Назад</button><span>Страница {directoryPage+1} из {Math.max(1,Math.ceil(diskReport.subdirs.length/50))}</span><button disabled={(directoryPage+1)*50>=diskReport.subdirs.length} onClick={()=>setDirectoryPage(p=>p+1)}>Далее</button></div>
+              </section>
+              </details>
               <div className="bg-surface border border-line rounded-xl p-5 shadow-sm space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-txt uppercase tracking-wider font-mono flex items-center gap-2">
@@ -692,11 +791,12 @@ export const DiskPage: React.FC = () => {
 
           {dupReport ? (
             <>
+              {!!dupReport.cached_hashes && <p role="status" className="text-xs text-muted">Из кеша анализа: {dupReport.cached_hashes} хешей. Кеш сопоставляется по идентичности, размеру, времени создания/изменения и предварительному хешу. Перед удалением содержимое всегда проверяется заново.</p>}
               {/* Duplicates Summary Stats */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-surface border border-line rounded-xl p-4 shadow-sm">
                   <span className="text-[11px] text-muted font-mono uppercase tracking-wider">
-                    Избыточно занято
+                    Оценка объёма копий
                   </span>
                   <div className="text-2xl font-bold font-mono text-amber-400 mt-1">
                     {formatBytes(dupReport.total_wasted_bytes)}
@@ -708,13 +808,13 @@ export const DiskPage: React.FC = () => {
 
                 <div className="bg-surface border border-line rounded-xl p-4 shadow-sm">
                   <span className="text-[11px] text-muted font-mono uppercase tracking-wider">
-                    Групп доказанных дубликатов
+                    Групп совпадений SHA-256
                   </span>
                   <div className="text-2xl font-bold font-mono text-txt mt-1">
                     {dupReport.groups.length}
                   </div>
                   <span className="text-[11px] text-dim font-mono">
-                    с совпадением полного хеша SHA-256
+                    полные хеши, включая проверенный по метаданным кеш
                   </span>
                 </div>
 
@@ -787,6 +887,7 @@ export const DiskPage: React.FC = () => {
                           </div>
                         ))}
                       </div>
+                      <DuplicateActions group={group} reportId={sessionStorage.getItem("cleancore-dup-task")} />
                     </div>
                   ))
                 ) : (
@@ -811,11 +912,21 @@ export const DiskPage: React.FC = () => {
                 Поиск дубликатов ещё не запускался
               </h3>
               <p className="text-xs text-muted max-w-md mx-auto">
-                Нажмите «Поиск дубликатов», чтобы запустить трёхфазный криптографический поиск копий в выбранном каталоге.
+                Нажмите «Поиск дубликатов», чтобы запустить поиск файлов с одинаковым содержимым в выбранном каталоге.
               </p>
             </div>
           )}
         </div>
+      )}
+
+      {/* Space Hogs Tab */}
+      {activeTab === "space_hogs" && (
+        <SpaceHogsTable />
+      )}
+
+      {/* Stale Files Tab */}
+      {activeTab === "stale" && (
+        <StaleFilesView defaultPath={selectedPath || customPath} />
       )}
 
       {/* Resource History Tab */}
@@ -825,7 +936,7 @@ export const DiskPage: React.FC = () => {
             <div>
               <h3 className="font-heading text-sm font-semibold text-txt flex items-center gap-2">
                 <Activity className="w-4 h-4 text-accent" />
-                Динамика системных ресурсов за 10 минут (до 600 замеров)
+                Динамика системных ресурсов за последние 10 минут
               </h3>
               <p className="text-xs text-muted mt-0.5">
                 Кольцевой буфер в памяти процесса, отображающий долгосрочные тренды нагрузки CPU, RAM и сети
@@ -849,18 +960,18 @@ export const DiskPage: React.FC = () => {
                     Загрузка CPU (%)
                   </span>
                   <span className="text-xs font-mono font-bold text-accent">
-                    {history.cpu_percentages.at(-1)?.toFixed(1) ?? "0"}%
+                    {history.cpu_percentages.at(-1)?.toFixed(1) ?? "нет данных"}%
                   </span>
                 </div>
                 <div className="h-32 w-full flex items-end gap-1 pt-4 pb-2 border-b border-line">
                   {renderSparkline(history.cpu_percentages, 100, "#0ea5e9")}
                 </div>
                 <div className="flex items-center justify-between text-[11px] font-mono text-dim">
-                  <span>Мин: {Math.min(...history.cpu_percentages).toFixed(1)}%</span>
+                  <span>Мин: {historyStatistic(history.cpu_percentages, "min")}%</span>
                   <span>
-                    Ср: {(history.cpu_percentages.reduce((a, b) => a + b, 0) / history.cpu_percentages.length).toFixed(1)}%
+                    Ср: {historyStatistic(history.cpu_percentages, "mean")}%
                   </span>
-                  <span>Макс: {Math.max(...history.cpu_percentages).toFixed(1)}%</span>
+                  <span>Макс: {historyStatistic(history.cpu_percentages, "max")}%</span>
                 </div>
               </div>
 
@@ -871,18 +982,18 @@ export const DiskPage: React.FC = () => {
                     Занято RAM (%)
                   </span>
                   <span className="text-xs font-mono font-bold text-emerald-400">
-                    {history.memory_percentages.at(-1)?.toFixed(1) ?? "0"}%
+                    {history.memory_percentages.at(-1)?.toFixed(1) ?? "нет данных"}%
                   </span>
                 </div>
                 <div className="h-32 w-full flex items-end gap-1 pt-4 pb-2 border-b border-line">
                   {renderSparkline(history.memory_percentages, 100, "#10b981")}
                 </div>
                 <div className="flex items-center justify-between text-[11px] font-mono text-dim">
-                  <span>Мин: {Math.min(...history.memory_percentages).toFixed(1)}%</span>
+                  <span>Мин: {historyStatistic(history.memory_percentages, "min")}%</span>
                   <span>
-                    Ср: {(history.memory_percentages.reduce((a, b) => a + b, 0) / history.memory_percentages.length).toFixed(1)}%
+                    Ср: {historyStatistic(history.memory_percentages, "mean")}%
                   </span>
-                  <span>Макс: {Math.max(...history.memory_percentages).toFixed(1)}%</span>
+                  <span>Макс: {historyStatistic(history.memory_percentages, "max")}%</span>
                 </div>
               </div>
 
@@ -893,22 +1004,22 @@ export const DiskPage: React.FC = () => {
                     Сетевой трафик (RX)
                   </span>
                   <span className="text-xs font-mono font-bold text-purple-400">
-                    {formatBytes(history.network_rx_bytes_sec.at(-1) ?? 0)}/с
+                    {historySpeed(history.network_rx_bytes_sec.at(-1))}/с
                   </span>
                 </div>
                 <div className="h-32 w-full flex items-end gap-1 pt-4 pb-2 border-b border-line">
                   {renderSparkline(
                     history.network_rx_bytes_sec,
-                    Math.max(...history.network_rx_bytes_sec, 1024),
+                    Math.max(...history.network_rx_bytes_sec.filter(isNumber), 1024),
                     "#a855f7"
                   )}
                 </div>
                 <div className="flex items-center justify-between text-[11px] font-mono text-dim">
                   <span>
-                    Пик: {formatBytes(Math.max(...history.network_rx_bytes_sec))}/с
+                    Пик: {history.network_rx_bytes_sec.some(isNumber) ? formatBytes(Math.max(...history.network_rx_bytes_sec.filter(isNumber))) : "нет данных"}/с
                   </span>
                   <span>
-                    TX: {formatBytes(history.network_tx_bytes_sec.at(-1) ?? 0)}/с
+                    TX: {historySpeed(history.network_tx_bytes_sec.at(-1))}/с
                   </span>
                 </div>
               </div>
@@ -924,19 +1035,21 @@ export const DiskPage: React.FC = () => {
   );
 };
 
-function renderSparkline(values: number[], max: number, color: string) {
+function renderSparkline(values: (number | null)[], max: number, color: string) {
   if (values.length === 0) return null;
   const width = 360;
   const height = 110;
   const step = width / Math.max(values.length - 1, 1);
 
-  const points = values.map((v, i) => {
+  let connected = false;
+  const path = values.map((v, i) => {
+    if (v === null || !Number.isFinite(v)) { connected = false; return ""; }
     const x = i * step;
     const y = height - (Math.min(v / max, 1) * (height - 10) + 5);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-
-  const path = `M ${points.join(" L ")}`;
+    const command = connected ? "L" : "M";
+    connected = true;
+    return `${command} ${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
 
   return (
     <svg className="w-full h-full overflow-visible" viewBox={`0 0 ${width} ${height}`}>
@@ -950,4 +1063,19 @@ function renderSparkline(values: number[], max: number, color: string) {
       />
     </svg>
   );
+}
+
+function isNumber(value: number | null): value is number { return value !== null && Number.isFinite(value); }
+function historySpeed(value: number | null | undefined): string { return value == null ? "нет данных" : formatBytes(value); }
+function historyStatistic(values: (number | null)[], statistic: "min" | "max" | "mean"): string {
+  const measured = values.filter(isNumber);
+  if (!measured.length) return "нет данных";
+  const result = statistic === "min" ? Math.min(...measured) : statistic === "max" ? Math.max(...measured) : measured.reduce((a, b) => a + b, 0) / measured.length;
+  return result.toFixed(1);
+}
+
+
+function diskSkipReason(code:string):string {
+ const reasons:Record<string,string>={ACCESS_DENIED:"Нет доступа",FILE_IN_USE:"Каталог занят",ACCESS_OR_READ_DENIED:"Каталог недоступен",READ_ENTRY_FAILED:"Не удалось прочитать объект",METADATA_UNAVAILABLE:"Нет сведений о файле",LINK_SKIPPED:"Ссылка или точка перенаправления",DEPTH_LIMIT:"Достигнут предел глубины",ENTRY_LIMIT:"Достигнут предел числа объектов",QUEUE_LIMIT:"Достигнут предел очереди",SYSTEM_RECORD_WITHOUT_NAME:"Внутренние записи NTFS без имени",MFT_NAME_UNAVAILABLE:"Имя объекта MFT недоступно",MFT_INVALID_RECORD:"Повреждённая или изменившаяся запись MFT",MFT_READ_FAILED:"Ошибка чтения части MFT",MFT_MEMORY_LIMIT:"Достигнут предел памяти индекса",MFT_STALE_PARENT:"Устаревшая связь с родительским каталогом",MFT_UNREACHABLE:"Объекты с недоступной цепочкой каталогов",MFT_STALE_EXTENSION:"Устаревшее расширение записи",MFT_DATA_UNAVAILABLE:"Размер данных недоступен",MFT_DUPLICATE_DATA:"Противоречивые атрибуты данных",MFT_INVALID_PARENT:"Недопустимая связь каталогов",MFT_PARENT_CYCLE:"Цикл в связях каталогов",MFT_PATH_TOO_DEEP:"Слишком длинная цепочка каталогов",HARD_LINK_COUNTED_ONCE:"Объекты с несколькими именами: учтены один раз",NAMED_STREAMS_EXCLUDED:"Файлы с именованными потоками: потоки не включены",EXTENDED_ATTRIBUTES:"Файлы с расширениями записей MFT",CANCELLED:"Остановлено пользователем",REPARSE_POINT:"Точка перенаправления пропущена"};
+ return reasons[code] || code;
 }

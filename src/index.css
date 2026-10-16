@@ -24,6 +24,36 @@ body {
   font-family: "Trebuchet MS", system-ui, sans-serif;
   user-select: none;
   -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  color-scheme: dark;
+}
+
+@layer base {
+  button { transition: background-color 150ms, border-color 150ms, color 150ms; }
+  button:not(:disabled), summary { cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+  button:not(:disabled):active { transform: translateY(1px); }
+  input:not([type="checkbox"]):not([type="range"]), select, textarea { max-width: 100%; min-width: 0; }
+  input[type="checkbox"] { width: 1rem; height: 1rem; flex-shrink: 0; margin-top: 0.2rem; accent-color: var(--accent); }
+  select { white-space: normal; }
+  summary { padding-block: 0.35rem; }
+  p, li { overflow-wrap: anywhere; }
+}
+
+@layer components {
+  .action-panel { @apply sticky top-0 z-20 rounded-xl border border-line bg-shell p-4 shadow-lg space-y-3; }
+  .button-danger { @apply border border-red-400/50 bg-red-950 text-red-100 hover:bg-red-900 disabled:opacity-40; }
+  .step-list { @apply flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted; }
+  .step-list li { @apply flex items-center gap-2; }
+  .step-list [aria-current="step"] span { @apply border-accent bg-accent text-accent-ink; }
+  .step-list span { @apply flex h-6 w-6 items-center justify-center rounded-full border border-line text-dim; }
+}
+
+/* Keep legacy small labels readable while the screens share the same scale. */
+@layer utilities {
+  .text-\[9px\], .text-\[10px\], .text-\[11px\] { font-size: 0.75rem; line-height: 1.5; }
 }
 
 /* Scrollbar styling */
@@ -43,4 +73,14 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--dim);
+}
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+input, textarea, code, pre { user-select: text; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+@media (max-width: 640px) {
+  main { padding: 1rem !important; }
+  header nav { overflow-x: auto; max-width: 100%; }
 }

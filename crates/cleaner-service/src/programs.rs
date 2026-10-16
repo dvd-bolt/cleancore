@@ -118,12 +118,12 @@ pub fn parse_uninstaller_command(cmd_line: &str) -> Result<(String, Vec<String>)
     let expanded_trim = expanded.trim();
 
     // 1. Проверка на MsiExec вызовы
-    let lower = expanded_trim.to_lowercase();
+    let lower = expanded_trim.to_ascii_lowercase();
     if lower.starts_with("msiexec.exe") || lower.starts_with("msiexec ") || lower == "msiexec" {
-        let sys_root = std::env::var("SystemRoot")
-            .or_else(|_| std::env::var("WINDIR"))
-            .unwrap_or_else(|_| "C:\\Windows".to_string());
-        let msiexec_path = format!("{}\\System32\\msiexec.exe", sys_root.trim_end_matches('\\'));
+        let msiexec_path = crate::tools::get_system32_directory()
+            .join("msiexec.exe")
+            .to_string_lossy()
+            .into_owned();
 
         let rest = if lower.starts_with("msiexec.exe") {
             expanded_trim["msiexec.exe".len()..].trim()
@@ -146,7 +146,7 @@ pub fn parse_uninstaller_command(cmd_line: &str) -> Result<(String, Vec<String>)
         }
     } else {
         // Путь без кавычек: ищем расширение исполняемого файла (.exe, .bat, .cmd)
-        let lower = expanded_trim.to_lowercase();
+        let lower = expanded_trim.to_ascii_lowercase();
         let mut split_pos = None;
         for ext in &[".exe", ".bat", ".cmd", ".com"] {
             let mut search_from = 0;
@@ -188,6 +188,17 @@ pub fn parse_uninstaller_command(cmd_line: &str) -> Result<(String, Vec<String>)
         )));
     }
 
+    if !Path::new(&exe_clean).is_absolute()
+        || !exe_clean.to_ascii_lowercase().ends_with(".exe")
+        || exe_clean.chars().any(|c| c == '\0')
+        || Path::new(&exe_clean)
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(ServiceError::InvalidCommand(
+            "Требуется абсолютный путь к EXE; скрипты и поиск по PATH запрещены".into(),
+        ));
+    }
     let args = tokenize_arguments(raw_args);
     Ok((exe_clean, args))
 }
@@ -344,10 +355,15 @@ fn list_installed_programs_windows(
                 if is_wow64 { "32" } else { "64" },
                 subkey_name
             );
-            if seen_ids.contains(&id) {
+            // HKCU Uninstall is shared between registry views on Windows.
+            let dedup_key = if hive_name == "HKCU" {
+                format!("HKCU_{subkey_name}")
+            } else {
+                id.clone()
+            };
+            if !seen_ids.insert(dedup_key) {
                 continue;
             }
-            seen_ids.insert(id.clone());
 
             programs.push(InstalledProgram {
                 id,
@@ -380,13 +396,18 @@ pub fn launch_uninstaller(program_id: &str) -> Result<LaunchResult, ServiceError
 
     let cmd_line = program
         .uninstall_string
-        .or(program.quiet_uninstall_string)
         .ok_or_else(|| ServiceError::NoUninstallString(program.display_name.clone()))?;
 
     let (exe_path, args) = parse_uninstaller_command(&cmd_line)?;
 
     #[cfg(windows)]
     {
+        if !matches!(Path::new(&exe_path).components().next(), Some(std::path::Component::Prefix(prefix)) if matches!(prefix.kind(), std::path::Prefix::Disk(_) | std::path::Prefix::VerbatimDisk(_)))
+        {
+            return Err(ServiceError::InvalidCommand(
+                "Запуск с сетевых путей не поддерживается".into(),
+            ));
+        }
         if !Path::new(&exe_path).is_file() {
             return Err(ServiceError::ExecutableNotFound(exe_path));
         }

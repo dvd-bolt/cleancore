@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-assistant-enable"
+description = "Enables the assistant_enable command without any pre-configured scope."
+commands.allow = ["assistant_enable"]
+
+[[permission]]
+identifier = "deny-assistant-enable"
+description = "Denies the assistant_enable command without any pre-configured scope."
+commands.deny = ["assistant_enable"]

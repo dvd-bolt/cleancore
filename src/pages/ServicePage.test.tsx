@@ -130,11 +130,11 @@ describe("ServicePage UI Component", () => {
     );
 
     expect(html).toContain("Центр обслуживания");
-    expect(html).toContain("v0.3 • МОДУЛИ 6.1–6.6");
-    expect(html).toContain("1. Программы");
-    expect(html).toContain("2. Автозагрузка");
-    expect(html).toContain("3. Защита и здоровье");
-    expect(html).toContain("4. Инструменты Windows");
+    expect(html).not.toContain("МОДУЛИ 6.1–6.6");
+    expect(html).toContain("Программы");
+    expect(html).toContain("Автозагрузка");
+    expect(html).toContain("Защита и диагностика");
+    expect(html).toContain("Инструменты Windows");
     expect(html).toContain("Экспорт отчёта (CSV)");
   });
 
@@ -185,7 +185,7 @@ describe("ServicePage UI Component", () => {
     expect(html).not.toContain("Microsoft Visual Studio Code");
   });
 
-  it("renders Startup tab with read-only warning and item target indicators", () => {
+  it("renders Startup controls scope and item target indicators", () => {
     const html = renderToStaticMarkup(
       <ServicePage
         initialTab="startup"
@@ -193,7 +193,7 @@ describe("ServicePage UI Component", () => {
       />
     );
 
-    expect(html).toContain("Безопасный аудит автозапуска (Только чтение)");
+    expect(html).toContain("Управление автозапуском текущего пользователя");
     expect(html).toContain("OneDrive");
     expect(html).toContain("CleanCoreHelper.lnk");
     expect(html).toContain("Файл найден");
@@ -311,7 +311,7 @@ describe("ServicePage UI Component", () => {
     expect(html).toContain("Установленные программы");
     expect(html).toContain("Элементы автозагрузки");
     expect(html).toContain("Диагностика здоровья и статус защиты Defender");
-    expect(html).toContain("CWE-1236");
+    expect(html).toContain("чтобы таблицы не исполняли их как формулы");
     expect(html).toContain("Сформировать отчёт");
   });
 
@@ -344,5 +344,25 @@ describe("ServicePage UI Component", () => {
     expect(formatInstallDate("20260115")).toBe("15.01.2026");
     expect(formatInstallDate("20261231")).toBe("31.12.2026");
     expect(formatInstallDate("15.01.2026")).toBe("15.01.2026");
+  });
+
+  it("renders dev_recycle tab with Recycle Bin and Dev Caches controls", () => {
+    const html = renderToStaticMarkup(
+      <ServicePage initialTab="dev_recycle" />
+    );
+
+    expect(html).toContain("Системная Корзина Windows");
+    expect(html).toContain("Кэши разработки и виртуальные диски");
+    expect(html).toContain("node_modules");
+  });
+
+  it("renders diagnostics tab with power tuning and cpu throttling card", () => {
+    const html = renderToStaticMarkup(
+      <ServicePage initialTab="diagnostics" initialDiagnostics={mockDiagnostics} />
+    );
+
+    expect(html).toContain("Электропитание и процессорный троттлинг");
+    expect(html).toContain("Тихий (Quiet)");
+    expect(html).toContain("Максимальная мощность");
   });
 });

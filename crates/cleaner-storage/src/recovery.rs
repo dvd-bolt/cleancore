@@ -77,18 +77,19 @@ pub fn quarantine_file(path: &Path, tag: &str) -> Result<PathBuf, std::io::Error
     Ok(candidate)
 }
 
-/// Очищает сопутствующие файлы SQLite журналов (-wal, -shm, -journal),
+/// Сохраняет сопутствующие файлы SQLite журналов (-wal, -shm, -journal) в карантин,
 /// которые могли остаться после сбоя или повреждения базы.
-pub fn clean_sqlite_sidecars(db_path: &Path) {
+pub fn quarantine_sqlite_sidecars(db_path: &Path) -> Result<(), std::io::Error> {
     let base = db_path.as_os_str();
     for suffix in &["-wal", "-shm", "-journal", ".wal", ".shm", ".journal"] {
         let mut sidecar_name = base.to_owned();
         sidecar_name.push(suffix);
         let sidecar_path = PathBuf::from(sidecar_name);
         if sidecar_path.exists() {
-            let _ = std::fs::remove_file(sidecar_path);
+            quarantine_file(&sidecar_path, "corrupt")?;
         }
     }
+    Ok(())
 }
 
 /// Возвращает текущее время UTC в формате `YYYYMMDD_HHMMSS`.

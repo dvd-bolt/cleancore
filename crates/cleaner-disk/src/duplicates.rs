@@ -3,7 +3,7 @@
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{Read, Seek, SeekFrom};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -134,6 +134,16 @@ pub fn find_duplicates<F>(
 where
     F: Fn(&str, u64, u64), // (phase_description, current, total)
 {
+    find_duplicates_cached(root_path, cancellation_token, progress_callback, None)
+}
+pub fn find_duplicates_cached<F: Fn(&str, u64, u64)>(
+    root_path: &Path,
+    cancellation_token: Arc<AtomicBool>,
+    progress_callback: F,
+    cache: Option<&dyn cleaner_core::duplicate_cache::DuplicateHashCache>,
+) -> Result<DuplicateScanResult, String> {
+    let _root_lease = cleaner_execution::native::lock_directory(root_path, Path::new(""))
+        .map_err(str::to_string)?;
     if !root_path.exists() || !root_path.is_dir() {
         return Err(format!("Каталог не найден: {}", root_path.display()));
     }
@@ -156,7 +166,9 @@ where
         &mut size_groups,
         &mut total_scanned,
         &progress_callback,
-    );
+        root_path,
+        0,
+    )?;
 
     if cancellation_token.load(Ordering::Relaxed) {
         return Ok(DuplicateScanResult {
@@ -164,6 +176,7 @@ where
             groups: Vec::new(),
             total_wasted_bytes: 0,
             total_duplicate_files: 0,
+            cached_hashes: 0,
         });
     }
 
@@ -211,7 +224,7 @@ where
                 );
             }
 
-            if let Ok((prehash, phys_id)) = compute_prehash(&path) {
+            if let Ok((prehash, phys_id)) = compute_prehash(&path, root_path) {
                 prehash_groups
                     .entry((size, prehash))
                     .or_default()
@@ -239,15 +252,16 @@ where
 
     let mut full_hash_groups: HashMap<(u64, String), Vec<DuplicateFileEntry>> = HashMap::new();
     let mut phase3_processed = 0u64;
+    let mut cached_hashes = 0u64;
 
-    for ((size, _prehash), items) in surviving_prehash {
+    for ((size, prehash), items) in surviving_prehash {
         if cancellation_token.load(Ordering::Relaxed) {
             break;
         }
 
         // Фильтр hard links: одинаковый physical_id исключается
         let mut unique_physical: HashMap<PhysicalFileId, PathBuf> = HashMap::new();
-        let mut filtered_items: Vec<PathBuf> = Vec::new();
+        let mut filtered_items = Vec::new();
 
         for (path, maybe_phys_id) in items {
             if let Some(phys_id) = maybe_phys_id {
@@ -257,14 +271,14 @@ where
                 }
                 unique_physical.insert(phys_id, path.clone());
             }
-            filtered_items.push(path);
+            filtered_items.push((path, maybe_phys_id));
         }
 
         if filtered_items.len() < 2 {
             continue;
         }
 
-        for path in filtered_items {
+        for (path, phys_id) in filtered_items {
             if cancellation_token.load(Ordering::Relaxed) {
                 break;
             }
@@ -278,7 +292,16 @@ where
                 );
             }
 
-            if let Ok((full_hash, modified)) = compute_full_hash(&path) {
+            if let Ok((full_hash, modified, cached)) = compute_full_hash_cached(
+                &path,
+                root_path,
+                phys_id,
+                size,
+                &cancellation_token,
+                cache,
+                &prehash,
+            ) {
+                cached_hashes += u64::from(cached);
                 full_hash_groups
                     .entry((size, full_hash))
                     .or_default()
@@ -329,6 +352,7 @@ where
         groups: final_groups,
         total_wasted_bytes,
         total_duplicate_files,
+        cached_hashes,
     })
 }
 
@@ -338,21 +362,37 @@ fn collect_files_by_size<F>(
     size_groups: &mut HashMap<u64, Vec<PathBuf>>,
     total_scanned: &mut u64,
     progress_callback: &F,
-) where
+    root: &Path,
+    depth: usize,
+) -> Result<(), String>
+where
     F: Fn(&str, u64, u64),
 {
     if cancellation_token.load(Ordering::Relaxed) {
-        return;
+        return Ok(());
     }
 
+    if depth > 32 || *total_scanned >= 100_000 {
+        return Err("Достигнут предел поиска; выберите меньший каталог".into());
+    }
+    let _lease = cleaner_execution::native::lock_directory(
+        root,
+        dir.strip_prefix(root).map_err(|e| e.to_string())?,
+    )
+    .map_err(str::to_string)?;
     let read_dir = match fs::read_dir(dir) {
         Ok(rd) => rd,
-        Err(_) => return,
+        Err(error) => return Err(error.to_string()),
     };
 
-    for entry in read_dir.flatten() {
+    for (index, entry) in read_dir.enumerate() {
+        if index >= 100_000 || *total_scanned >= 100_000 {
+            return Err("Достигнут предел поиска; выберите меньший каталог".into());
+        }
+        let entry = entry.map_err(|e| e.to_string())?;
+        *total_scanned += 1;
         if cancellation_token.load(Ordering::Relaxed) {
-            return;
+            return Ok(());
         }
 
         let path = entry.path();
@@ -372,13 +412,14 @@ fn collect_files_by_size<F>(
                 size_groups,
                 total_scanned,
                 progress_callback,
-            );
+                root,
+                depth + 1,
+            )?;
         } else if file_type.is_file() {
             if let Ok(meta) = entry.metadata() {
                 let size = meta.len();
                 if size > 0 {
                     size_groups.entry(size).or_default().push(path);
-                    *total_scanned += 1;
                     if (*total_scanned).is_multiple_of(200) {
                         progress_callback("Фаза 1/3: Поиск файлов...", *total_scanned, 0);
                     }
@@ -386,26 +427,31 @@ fn collect_files_by_size<F>(
             }
         }
     }
+    Ok(())
 }
 
 /// Вычисляет предварительный хеш первых 16 КБ файла с проверкой неизменности.
-fn compute_prehash(path: &Path) -> Result<([u8; 32], Option<PhysicalFileId>), String> {
-    let mut file = File::open(path).map_err(|e| e.to_string())?;
+fn compute_prehash(path: &Path, root: &Path) -> Result<([u8; 32], Option<PhysicalFileId>), String> {
+    let mut file = cleaner_execution::native::open_bound_reader(
+        root,
+        path.strip_prefix(root).map_err(|e| e.to_string())?,
+    )
+    .map_err(str::to_string)?;
 
-    let meta_before = file.metadata().map_err(|e| e.to_string())?;
+    let meta_before = file.file().metadata().map_err(|e| e.to_string())?;
     let modified_before = meta_before.modified().map_err(|e| e.to_string())?;
 
-    let phys_id = get_physical_file_id(&file);
+    let phys_id = get_physical_file_id(file.file());
 
     let mut buf = vec![0u8; PREHASH_SIZE];
     let n = file.read(&mut buf).map_err(|e| e.to_string())?;
     buf.truncate(n);
 
     // Повторная проверка времени модификации (защита от изменений на лету)
-    let meta_after = file.metadata().map_err(|e| e.to_string())?;
+    let meta_after = file.file().metadata().map_err(|e| e.to_string())?;
     let modified_after = meta_after.modified().map_err(|e| e.to_string())?;
 
-    if modified_before != modified_after {
+    if modified_before != modified_after || meta_before.len() != meta_after.len() {
         return Err("Файл изменился во время чтения предварительного хеша".into());
     }
 
@@ -420,18 +466,87 @@ fn compute_prehash(path: &Path) -> Result<([u8; 32], Option<PhysicalFileId>), St
 }
 
 /// Вычисляет полный SHA-256 хеш содержимого файла с потоковым чтением.
-fn compute_full_hash(path: &Path) -> Result<(String, SystemTime), String> {
-    let mut file = File::open(path).map_err(|e| e.to_string())?;
+#[cfg(test)]
+fn compute_full_hash(
+    path: &Path,
+    root: &Path,
+    expected_id: Option<PhysicalFileId>,
+    expected_size: u64,
+    cancel: &AtomicBool,
+) -> Result<(String, SystemTime), String> {
+    compute_full_hash_cached(
+        path,
+        root,
+        expected_id,
+        expected_size,
+        cancel,
+        None,
+        &[0; 32],
+    )
+    .map(|(hash, time, _)| (hash, time))
+}
+fn compute_full_hash_cached(
+    path: &Path,
+    root: &Path,
+    expected_id: Option<PhysicalFileId>,
+    expected_size: u64,
+    cancel: &AtomicBool,
+    cache: Option<&dyn cleaner_core::duplicate_cache::DuplicateHashCache>,
+    prehash: &[u8; 32],
+) -> Result<(String, SystemTime, bool), String> {
+    let mut file = cleaner_execution::native::open_bound_reader(
+        root,
+        path.strip_prefix(root).map_err(|e| e.to_string())?,
+    )
+    .map_err(str::to_string)?;
 
-    let meta_before = file.metadata().map_err(|e| e.to_string())?;
+    let meta_before = file.file().metadata().map_err(|e| e.to_string())?;
     let modified_before = meta_before.modified().map_err(|e| e.to_string())?;
 
-    file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+    if expected_id.is_none()
+        || get_physical_file_id(file.file()) != expected_id
+        || meta_before.len() != expected_size
+    {
+        return Err("Файл заменён между фазами хеширования".into());
+    }
 
+    if cancel.load(Ordering::Acquire) {
+        return Err("Поиск отменён".into());
+    }
+    let nanos = |time: SystemTime| {
+        time.duration_since(SystemTime::UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_nanos())
+    };
+    let cache_key = meta_before
+        .created()
+        .ok()
+        .and_then(nanos)
+        .zip(nanos(modified_before))
+        .zip(expected_id)
+        .map(|((created, modified), id)| {
+            format!(
+                "sha256-v1:{}:{}:{}:{}:{created}:{modified}:{:x}",
+                id.volume_serial,
+                id.file_index_high,
+                id.file_index_low,
+                expected_size,
+                Sha256::digest(prehash)
+            )
+        });
+    if let Some(hash) = cache_key
+        .as_deref()
+        .and_then(|key| cache.and_then(|c| c.get(key)))
+    {
+        return Ok((hash, modified_before, true));
+    }
     let mut hasher = Sha256::new();
     let mut buf = [0u8; HASH_BUFFER_SIZE];
 
     loop {
+        if cancel.load(Ordering::Relaxed) {
+            return Err("Поиск отменён".into());
+        }
         let n = file.read(&mut buf).map_err(|e| e.to_string())?;
         if n == 0 {
             break;
@@ -440,22 +555,58 @@ fn compute_full_hash(path: &Path) -> Result<(String, SystemTime), String> {
     }
 
     // Повторная проверка времени модификации (TOCTOU protection)
-    let meta_after = file.metadata().map_err(|e| e.to_string())?;
+    let meta_after = file.file().metadata().map_err(|e| e.to_string())?;
     let modified_after = meta_after.modified().map_err(|e| e.to_string())?;
 
-    if modified_before != modified_after {
+    if modified_before != modified_after || meta_before.len() != meta_after.len() {
         return Err("Файл изменился во время вычисления полного хеша".into());
     }
 
     let result = hasher.finalize();
     let hex_hash = format!("{result:x}");
 
-    Ok((hex_hash, modified_after))
+    if let (Some(cache), Some(key)) = (cache, cache_key.as_deref()) {
+        cache.put(key, &hex_hash);
+    }
+    Ok((hex_hash, modified_after, false))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_hard_links_and_checks_full_content_after_matching_prehash() {
+        let dir = std::env::temp_dir().join(format!("disk_adversarial_{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let mut first = vec![42u8; PREHASH_SIZE + 1024];
+        fs::write(dir.join("first.bin"), &first).unwrap();
+        std::fs::hard_link(dir.join("first.bin"), dir.join("link.bin")).unwrap();
+        first[PREHASH_SIZE + 1] = 43;
+        fs::write(dir.join("different.bin"), first).unwrap();
+        let result = find_duplicates(&dir, Arc::new(AtomicBool::new(false)), |_, _, _| {}).unwrap();
+        assert!(result.groups.is_empty());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn hash_cancellation_and_phase_identity_mismatch_are_rejected() {
+        let dir = std::env::temp_dir().join(format!("disk_identity_{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("file.bin");
+        fs::write(&path, vec![7; HASH_BUFFER_SIZE * 2]).unwrap();
+        let (_, id) = compute_prehash(&path, &dir).unwrap();
+        assert!(compute_full_hash(
+            &path,
+            &dir,
+            id,
+            (HASH_BUFFER_SIZE * 2) as u64,
+            &AtomicBool::new(true)
+        )
+        .is_err());
+        assert!(compute_full_hash(&path, &dir, None, 1, &AtomicBool::new(false)).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn test_find_real_duplicates() {
@@ -507,5 +658,59 @@ mod tests {
         assert_eq!(res.groups.len(), 0);
 
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+}
+
+#[cfg(all(test, windows))]
+mod cache_tests {
+    use super::*;
+    use cleaner_core::duplicate_cache::DuplicateHashCache;
+    #[derive(Default)]
+    struct Cache(std::sync::Mutex<HashMap<String, String>>);
+    impl DuplicateHashCache for Cache {
+        fn get(&self, key: &str) -> Option<String> {
+            self.0.lock().unwrap().get(key).cloned()
+        }
+        fn put(&self, key: &str, value: &str) {
+            self.0.lock().unwrap().insert(key.into(), value.into());
+        }
+    }
+    #[test]
+    fn repeated_scan_uses_cache_but_changed_tail_invalidates_metadata_key() {
+        let root = std::env::temp_dir().join(format!("cleancore_cached_scan_{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let content = vec![7; PREHASH_SIZE + 100];
+        for name in ["a.bin", "b.bin"] {
+            fs::write(root.join(name), &content).unwrap();
+        }
+        let cache = Cache::default();
+        let scan = || {
+            find_duplicates_cached(
+                &root,
+                Arc::new(AtomicBool::new(false)),
+                |_, _, _| {},
+                Some(&cache),
+            )
+            .unwrap()
+        };
+        let first = scan();
+        assert_eq!(first.groups.len(), 1);
+        assert_eq!(first.cached_hashes, 0);
+        let warm = scan();
+        assert_eq!(warm.groups.len(), 1);
+        assert_eq!(warm.cached_hashes, 2);
+        let mut changed = content;
+        changed[PREHASH_SIZE + 1] = 9;
+        fs::write(root.join("b.bin"), changed).unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(root.join("b.bin"))
+            .unwrap()
+            .set_modified(SystemTime::now() + std::time::Duration::from_secs(3))
+            .unwrap();
+        let changed = scan();
+        assert!(changed.groups.is_empty());
+        assert_eq!(changed.cached_hashes, 1);
+        fs::remove_dir_all(root).unwrap();
     }
 }

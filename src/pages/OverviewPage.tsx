@@ -4,6 +4,7 @@ import { MetricCard } from "../components/MetricCard";
 import { ActivityChart } from "../components/ActivityChart";
 import { CleanupCard } from "../components/CleanupCard";
 import { ProcessMiniTable } from "../components/ProcessMiniTable";
+import { SmartInsightsWidget } from "../components/SmartInsightsWidget";
 import { Cpu, HardDrive, MemoryStick, Network, Wifi } from "lucide-react";
 
 interface OverviewPageProps {
@@ -69,7 +70,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
             Обзор системы
           </span>
           <h2 className="font-heading text-2xl font-bold text-txt">
-            Всё важное. <span className="text-dim">На одном экране.</span>
+            Состояние системы
           </h2>
           <p className="text-xs text-muted mt-1">
             Нагрузка, процессы и свободное место — без скрытых действий и лишнего шума.
@@ -147,6 +148,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
               : undefined
           }
           progressPercent={metrics?.disk.value?.usage_percent}
+          progressLabel="Занято"
         />
 
         <MetricCard
@@ -164,6 +166,13 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
         />
       </div>
 
+      {/* Интеллектуальный советник (OPT-06: Auto-Pilot Watcher & Smart Insights) */}
+      <SmartInsightsWidget
+        metrics={metrics}
+        processes={processes}
+        onNavigate={(page) => onNavigate(page)}
+      />
+
       {/* Main Grid: Live Chart + Cleanup Action */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
@@ -173,6 +182,21 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
           <CleanupCard onOpenCleanup={() => onNavigate("cleanup")} />
         </div>
       </div>
+
+      {(metrics?.disks?.length || metrics?.network_interfaces?.length) ? <details className="bg-shell border border-line rounded-xl p-4"><summary>Накопители и сетевые адаптеры</summary><section aria-label="Накопители и сетевые адаптеры" className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+        <div className="bg-surface border border-line rounded-xl p-4 space-y-2">
+          <h3 className="text-sm font-semibold">Локальные накопители</h3>
+          {metrics.disks?.map((field, index) => <p key={index} className="text-xs text-muted">
+            {field.status === "Available" && field.value ? `${field.value.mount_point} · свободно ${(field.value.free_bytes / 1024 ** 3).toFixed(1)} из ${(field.value.total_bytes / 1024 ** 3).toFixed(1)} ГБ` : "Нет данных о накопителе"}
+          </p>)}
+        </div>
+        <div className="bg-surface border border-line rounded-xl p-4 space-y-2">
+          <h3 className="text-sm font-semibold">Сетевые адаптеры</h3>
+          {metrics.network_interfaces?.map((field, index) => <p key={index} className="text-xs text-muted break-all">
+            {field.status === "Available" && field.value ? `${field.value.interface_name} · ↓ ${formatSpeed(field.value.rx_bytes_per_sec).value} ${formatSpeed(field.value.rx_bytes_per_sec).unit} · ↑ ${formatSpeed(field.value.tx_bytes_per_sec).value} ${formatSpeed(field.value.tx_bytes_per_sec).unit}` : "Нет данных об адаптере"}
+          </p>)}
+        </div>
+      </section></details> : null}
 
       {/* Bottom Grid: Process Preview + Network details */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

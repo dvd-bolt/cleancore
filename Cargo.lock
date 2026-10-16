@@ -342,8 +342,9 @@ dependencies = [
 
 [[package]]
 name = "cleancore"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
+ "cleaner-assistant",
  "cleaner-cleanup",
  "cleaner-core",
  "cleaner-disk",
@@ -357,11 +358,25 @@ dependencies = [
  "tauri-build",
  "thiserror 2.0.21",
  "tracing",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "cleaner-assistant"
+version = "0.0.4"
+dependencies = [
+ "cleaner-execution",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+ "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "cleaner-cleanup"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "cleaner-core",
  "cleaner-execution",
@@ -369,6 +384,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "toml 1.1.8+spec-1.1.0",
  "tracing",
  "uuid",
  "windows-sys 0.61.2",
@@ -376,7 +392,7 @@ dependencies = [
 
 [[package]]
 name = "cleaner-core"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -386,9 +402,10 @@ dependencies = [
 
 [[package]]
 name = "cleaner-disk"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "cleaner-core",
+ "cleaner-execution",
  "serde",
  "serde_json",
  "sha2",
@@ -400,18 +417,20 @@ dependencies = [
 
 [[package]]
 name = "cleaner-execution"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "cleaner-core",
+ "sha2",
  "uuid",
  "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "cleaner-service"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "cleaner-core",
+ "cleaner-execution",
  "cleaner-system",
  "serde",
  "serde_json",
@@ -423,7 +442,7 @@ dependencies = [
 
 [[package]]
 name = "cleaner-storage"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "cleaner-core",
  "rusqlite",
@@ -435,7 +454,7 @@ dependencies = [
 
 [[package]]
 name = "cleaner-system"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "cleaner-core",
  "serde",

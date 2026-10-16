@@ -41,7 +41,7 @@ pub fn extract_target_executable_path(command: &str) -> String {
         }
     }
 
-    let lower = trimmed.to_lowercase();
+    let lower = trimmed.to_ascii_lowercase();
     for ext in &[".exe", ".bat", ".cmd", ".lnk", ".com"] {
         let mut search_from = 0;
         while let Some(pos) = lower[search_from..].find(ext) {
@@ -94,14 +94,6 @@ fn list_startup_items_windows() -> Result<Vec<StartupItem>, ServiceError> {
             StartupSource::RegistryRunOnce,
             KEY_READ | KEY_WOW64_64KEY,
             "RunOnce",
-        ),
-        (
-            HKEY_CURRENT_USER,
-            "HKCU",
-            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
-            StartupSource::RegistryRun,
-            KEY_READ | KEY_WOW64_32KEY,
-            "Run32",
         ),
         (
             HKEY_LOCAL_MACHINE,
@@ -162,7 +154,9 @@ fn list_startup_items_windows() -> Result<Vec<StartupItem>, ServiceError> {
                 .unwrap_or(true);
 
             let target_path = extract_target_executable_path(&cmd_string);
-            let target_exists = Path::new(&target_path).exists();
+            let target = Path::new(&target_path);
+            let is_local = matches!(target.components().next(), Some(std::path::Component::Prefix(prefix)) if matches!(prefix.kind(), std::path::Prefix::Disk(_) | std::path::Prefix::VerbatimDisk(_)));
+            let target_exists = is_local && target.exists();
 
             let location = format!(r"{}\{}", hive_name, path);
 

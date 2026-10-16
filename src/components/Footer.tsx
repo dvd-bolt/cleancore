@@ -11,7 +11,7 @@ export const Footer: React.FC<FooterProps> = ({ appInfo }) => {
     <footer className="bg-shell border-t border-line px-6 py-2 flex flex-wrap items-center justify-between text-[11px] text-dim font-mono select-none">
       <div className="flex items-center gap-4">
         <span className="flex items-center gap-1.5 text-txt">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="w-2 h-2 rounded-full bg-emerald-500" />
           <span>Локальный режим</span>
         </span>
         <span className="flex items-center gap-1.5">
@@ -29,7 +29,7 @@ export const Footer: React.FC<FooterProps> = ({ appInfo }) => {
         </span>
         <span className="flex items-center gap-1.5">
           <HardDrive className="w-3.5 h-3.5" />
-          <span>v{appInfo?.version || "0.0.1"}</span>
+          <span>v{appInfo?.version || "нет данных"}</span>
         </span>
       </div>
     </footer>

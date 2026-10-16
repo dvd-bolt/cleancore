@@ -49,7 +49,7 @@ export const ProcessMiniTable: React.FC<ProcessMiniTableProps> = ({
           </div>
           <strong className="text-xs font-medium text-txt">Нет данных о процессах</strong>
           <span className="text-[11px] text-muted mt-0.5">
-            Данные читаются без административных привилегий
+            Ожидание доступных данных от Windows
           </span>
         </div>
       ) : (
