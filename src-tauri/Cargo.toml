@@ -7,6 +7,12 @@ license.workspace = true
 repository.workspace = true
 description = "CleanCore Windows Desktop Application Shell"
 
+[[bin]]
+name = "cleancore"
+path = "src/main.rs"
+test = false
+bench = false
+
 [lib]
 name = "cleancore_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]

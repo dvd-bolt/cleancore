@@ -1,0 +1,7 @@
+# Keep text files consistent on Windows and in CI.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.icns binary
+*.docx binary
