@@ -175,8 +175,10 @@ mod tests {
             power: None,
         };
         let now = Instant::now();
-        tracker.record_at(&snapshot, now - Duration::from_secs(601));
         tracker.record_at(&snapshot, now);
+        // Move the test clock forward: a freshly booted Windows runner may
+        // not have 601 seconds of monotonic uptime available to subtract.
+        tracker.record_at(&snapshot, now + Duration::from_secs(601));
         let history = tracker.get_history();
         assert_eq!(history.timestamps_utc.len(), 1);
         assert_eq!(history.cpu_percentages, vec![None]);
